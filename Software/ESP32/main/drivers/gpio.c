@@ -1018,7 +1018,7 @@ void status_LED_test(void)
   int  i;
   char ch;
 
-  if ( ((IS_HOLD_C(rapid_C_LED)) && (IS_HOLD_C(rapid_D_LED))) || ((IS_HOLD_D(rapid_C_LED)) && (IS_HOLD_D(rapid_D_LED))) )
+  if ( !IS_HOLD_C(MFS_C_LED) || !IS_HOLD_D(MFS_D_LED) ) // Compare the MFS settings, not the LED driver function addresses
   {
     SEND(ALL, sprintf(_xs, "\r\nMFS_C or MFS_D not configured for output\r\n");)
   }

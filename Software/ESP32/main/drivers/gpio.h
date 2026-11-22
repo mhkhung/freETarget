@@ -8,6 +8,8 @@
 #ifndef _GPIO_H_
 #define _GPIO_H_
 
+#include "board_assembly.h" // BUILD_REV selects the pin assignments below
+
 /*
  * Global functions
  */
@@ -94,11 +96,12 @@ extern volatile unsigned int step_count; // Number of steps before stopping
 #define STOP_N      GPIO_NUM_47                                            // Stop the RUN flipflops
 #define CLOCK_START GPIO_NUM_21                                            // Trigger a test cycle
 #define OSC_CONTROL GPIO_NUM_48                                            // Enable / kill 10MHz Oscillator
-#endif
-#if ( (BUILD_REV == REV_510) || (BUILD_REV == REV_520) || (BUILD_REV == REV_600) || (BUILD_REV == REV_610) || (BUILD_REV == REV_620) )
+#elif ( (BUILD_REV == REV_510) || (BUILD_REV == REV_520) || (BUILD_REV == REV_600) || (BUILD_REV == REV_610) || (BUILD_REV == REV_620) )
 #define STOP_N      GPIO_NUM_21                                            // Stop the RUN flipflops
 #define CLOCK_START GPIO_NUM_47                                            // Trigger a test cycle
 #define OSC_CONTROL GPIO_NUM_48                                            // Enable / kill 10MHz Oscillator
+#else
+#error "Unknown BUILD_REV: no STOP_N / CLOCK_START pin assignment"
 #endif
 
 #define OSC_ON            1                                                // Enable the oscillator

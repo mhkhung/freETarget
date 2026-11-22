@@ -743,7 +743,18 @@ void interrupt_target_test(void)
  * Scan throught the sensor structure looking for the match to
  * the run mask.
  *
+ * If no sensor matches, a placeholder record is returned so that
+ * callers can always use ->short_name, ->long_name and ->diag_LED.
+ *
  *--------------------------------------------------------------*/
+static sensor_ID_t unknown_sensor = {
+    .short_name  = '?',
+    .long_name   = "UNKNOWN",
+    .diag_LED    = LED_READY,
+    .sensor_GPIO = 0,
+    .run_mask    = 0,
+};
+
 sensor_ID_t *find_sensor(unsigned int run_mask // Run mask to look for a match
 )
 {
@@ -766,9 +777,10 @@ sensor_ID_t *find_sensor(unsigned int run_mask // Run mask to look for a match
   }
 
   /*
-   * Not found, return null
+   * Not found.  Callers dereference the result straight away, so return a
+   * placeholder record rather than NULL.
    */
-  return LED_READY;
+  return &unknown_sensor;
 }
 /*----------------------------------------------------------------
  *
