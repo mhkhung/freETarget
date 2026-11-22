@@ -8,8 +8,8 @@
 #include <string.h>
 #include "esp_log.h"
 #include "driver/rmt_tx.h"
-#include "gpio_types.h"
-#include "driver\gpio.h"
+#include "hal/gpio_types.h"
+#include "driver/gpio.h"
 #include "esp_timer.h"
 #include "led_strip_types.h"
 

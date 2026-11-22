@@ -30,7 +30,7 @@ extern sensor_t s[4];
 void         init_sensors(void);                                                      // Initialize sensor structure
 unsigned int compute_hit(shot_record_t *shot);                                        // Find the location of the shot
 void         prepare_score(shot_record_t *shot, unsigned int shot_number, bool miss); // Send the shot
-void         send_replay(shot_record_t *shot, unsigned int shot_number);              // Replay an earlier shot
+void         send_replay(shot_record_t *shot, unsigned int shot_number, char *out, size_t out_size); // Replay an earlier shot into out
 void         rotate_hit(unsigned int location, shot_record_t *shot);                  // Rotate the shot back into the correct quadrant
 bool         find_xy_3D(sensor_t *s, double estimate, double z_offset_clock);         // Estimated position including slant range
 double       speed_of_sound(double temperature, double relative_humidity);            // Speed of sound in mm/us

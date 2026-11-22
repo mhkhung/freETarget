@@ -1127,6 +1127,7 @@ void commit_calibration(void)
 
   DLT(DLT_CALIBRATION, SEND(CONSOLE, sprintf(_xs, "commit_calibration()");))
 
+  xs_lock();                  // _xs is used as scratch memory for the blob
   size      = 0;
   blob      = (real_t *)&_xs; // Point to a chunk of memory
   begin     = blob;
@@ -1151,6 +1152,7 @@ void commit_calibration(void)
 
   size = (size_t)blob - (size_t)begin;
   nvs_set_blob(my_handle, NONVOL_CALIBRATION_DATA, &_xs, size);
+  xs_unlock();
   nvs_set_i32(my_handle, NONVOL_X_OFFSET, (int)(json_x_offset * 1000));
   nvs_set_i32(my_handle, NONVOL_Y_OFFSET, (int)(json_y_offset * 1000));
   nvs_set_i32(my_handle, NONVOL_SENSOR_ANGLE_OFFSET, (int)(json_sensor_angle_offset * 1000));
@@ -1188,10 +1190,13 @@ bool get_target_calibration(void)
   /*
    *  Put the calibration data into _xs
    */
+  xs_lock();            // _xs is used as scratch memory for the blob
   blob = (real_t *)_xs; // Point to a chunk of memory
+  size = sizeof(_xs);   // nvs_get_blob() needs the size of the buffer on entry
 
   if ( nvs_get_blob(my_handle, NONVOL_CALIBRATION_DATA, blob, &size) != ESP_OK )
   {
+    xs_unlock();
     DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "Precision target calibration not present");))
     return false;       // Return if calibration is not enabled
   }
@@ -1200,6 +1205,7 @@ bool get_target_calibration(void)
   {
     if ( *(blob) != SPLINE_VALID )
     {
+      xs_unlock();
       DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "Precision target calibration not present");))
       return false;
     }
@@ -1217,6 +1223,7 @@ bool get_target_calibration(void)
       spline_points[i].o2           = *(blob++);
     }
   }
+  xs_unlock();
 
   /*
    * Calibration retrieved

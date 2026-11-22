@@ -21,6 +21,7 @@
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "esp_tls.h"
+#include "freertos/semphr.h"
 
 #include "freETarget.h"
 #include "board_assembly.h"
@@ -98,6 +99,73 @@ static queue_struct_t out_buffer; // TCPIP input buffer
 
 unsigned int connection_list;     // Bitmask of existing connections
 time_count_t RS485_timer = 0;     // Timer to turn off RS485 transmitter
+
+static SemaphoreHandle_t xs_mutex = NULL; // Protects the shared _xs buffer
+static StaticSemaphore_t xs_mutex_buffer; // Storage for xs_mutex (never freed)
+
+/******************************************************************************
+ *
+ * @function: xs_lock_init / xs_lock / xs_unlock
+ *
+ * @brief:    Serialize access to the shared _xs text buffer
+ *
+ * @return:   None
+ *
+ *******************************************************************************
+ *
+ * _xs is a single global buffer used by every task to format messages
+ * (SEND, DLT, the HTTP handlers, ...).  Without a lock, two tasks can write
+ * into it at the same time and send out each other's text.
+ *
+ * The mutex is recursive so that a SEND nested inside another SEND in the
+ * same task does not deadlock.  It is a FreeRTOS mutex, so priority
+ * inheritance applies when the target loop waits on a lower priority task.
+ *
+ * xs_lock_init() must be called before any other task is started.  The lock
+ * is skipped in interrupt context and before the scheduler is running, where
+ * only one thread of execution exists.
+ *
+ * IMPORTANT
+ *
+ * Do not hold the lock across slow network operations.  Format into a local
+ * buffer instead.
+ *
+ ******************************************************************************/
+void xs_lock_init(void)
+{
+  if ( xs_mutex == NULL )
+  {
+    xs_mutex = xSemaphoreCreateRecursiveMutexStatic(&xs_mutex_buffer);
+  }
+  return;
+}
+
+void xs_lock(void)
+{
+  if ( xPortInIsrContext() || (xTaskGetSchedulerState() != taskSCHEDULER_RUNNING) )
+  {
+    return;
+  }
+
+  if ( xs_mutex == NULL ) // Defensive, xs_lock_init() should already have been called
+  {
+    xs_lock_init();
+  }
+
+  xSemaphoreTakeRecursive(xs_mutex, portMAX_DELAY);
+  return;
+}
+
+void xs_unlock(void)
+{
+  if ( xPortInIsrContext() || (xTaskGetSchedulerState() != taskSCHEDULER_RUNNING) || (xs_mutex == NULL) )
+  {
+    return;
+  }
+
+  xSemaphoreGiveRecursive(xs_mutex);
+  return;
+}
 
 /******************************************************************************
  *
@@ -519,8 +587,8 @@ void serial_putch(char ch,
    * in use.
    *
    ******************************************************************************/
-  void serial_to_all(char *str,        // String to output
-                     int   ports       // List of ports to output to
+  static void serial_to_all_unlocked(char *str,        // String to output
+                                     int   ports       // List of ports to output to
   )
   {
     static bool even_odd_mode = 0;     // Are we concatinating output?
@@ -615,6 +683,22 @@ void serial_putch(char ch,
     /*
      * All done
      */
+    return;
+  }
+
+  /*
+   * serial_to_all() takes the _xs lock so that the static even/odd state above
+   * is not shared between tasks and that messages from different tasks are not
+   * interleaved on the output.  The lock is recursive, so calling this from
+   * inside SEND() is safe.
+   */
+  void serial_to_all(char *str, // String to output
+                     int   ports // List of ports to output to
+  )
+  {
+    xs_lock();
+    serial_to_all_unlocked(str, ports);
+    xs_unlock();
     return;
   }
   /*******************************************************************************
@@ -1016,8 +1100,16 @@ void serial_putch(char ch,
    *
    *******************************************************************************
    *
-   * Check to see if there is a new connection, and if so, check to see if the
-   * variables need to be cleared
+   * Report changes in the connection list.
+   *
+   * IMPORTANT
+   *
+   * A connection change must never clear the session.  Earlier versions called
+   * start_new_session() here, which erased every recorded shot whenever a
+   * client (re)connected, for example after a WiFi drop out.  Sessions are now
+   * only started by an explicit command ({"SESSION":n}, the web menu) or at
+   * power up.  A reconnecting client is brought up to date by the replay in
+   * WiFi_start_new_connection().
    *
    ******************************************************************************/
   static unsigned int old_connection_list = 0;    // Previous connection mask
@@ -1029,17 +1121,9 @@ void serial_putch(char ch,
     {
       return;                                     // No, do nothing
     }
+
+    DLT(DLT_COMMUNICATION, SEND(CONSOLE, sprintf(_xs, "Connection list changed: %02X -> %02X", old_connection_list, connection_list);))
     old_connection_list = connection_list;
-
-    /*
-     *  Count up the number of connections
-     */
-    if ( hamming_weight(connection_list) > 1 ) // Do we have more than one connection?
-    {
-      return;                                  // Yes, then return
-    }
-
-    start_new_session(json_session_type);
 
     /*
      *  All done, return

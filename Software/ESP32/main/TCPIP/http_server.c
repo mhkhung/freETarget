@@ -83,6 +83,7 @@ httpd_handle_t start_webserver(unsigned int port // Port to use for the web serv
 
   config.server_port      = port;
   config.lru_purge_enable = true;
+  config.stack_size       = HTTP_SERVER_STACK; // Handlers format replies in local buffers, not in _xs
 
   DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "start_webserver(port: %d)", config.server_port);))
 
@@ -202,11 +203,13 @@ static esp_err_t stop_webserver(httpd_handle_t server)
  *------------------------------------------------------------*/
 esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err)
 {
+  char message[MEDIUM_TEXT]; // Error reported to the user (not _xs, the send may block)
+
   DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "http_404_error_handler: %s", req->uri);))
 
-  sprintf(_xs, "Error 404. Service not found: %s", req->uri); // Error reported to the user
+  snprintf(message, sizeof(message), "Error 404. Service not found: %.200s", req->uri); // URI is truncated to fit
 
-  httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, _xs);
+  httpd_resp_send_err(req, HTTPD_404_NOT_FOUND, message);
   return ESP_FAIL;
 }
 

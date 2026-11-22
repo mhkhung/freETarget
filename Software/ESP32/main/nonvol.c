@@ -21,7 +21,7 @@
 #include "nonvol.h"
 #include "serial_io.h"
 #include "calibrate.h"
-#include "ota.h"
+#include "OTA.h"
 #include "board_assembly.h"
 #include "analog_io.h"
 
@@ -384,8 +384,7 @@ void update_nonvol(unsigned int current_version) // Version present in persisten
           case IS_SECRET:
             if ( JSON[i].non_vol != 0 )
             {
-              _xs[0] = 0;
-              nvs_set_str(my_handle, JSON[i].non_vol, _xs); // Zero out the text
+              nvs_set_str(my_handle, JSON[i].non_vol, ""); // Zero out the text
             }
             break;
 
@@ -445,7 +444,7 @@ void nonvol_write_i32(char *name, int *value) // Name of the value to write
 {
   DLT(DLT_DEBUG, SEND(CONSOLE, sprintf(_xs, "nonvol_write(%s)\r\n", name);))
 
-  if ( nvs_set_i32(my_handle, name, value) != ESP_OK )
+  if ( nvs_set_i32(my_handle, name, *value) != ESP_OK ) // Store the value, not its address
   {
     DLT(DLT_CRITICAL, SEND(CONSOLE, sprintf(_xs, "Failed to write %s to NONVOL", name);))
   }

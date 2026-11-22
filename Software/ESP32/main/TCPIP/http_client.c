@@ -635,8 +635,10 @@ void http_native_request(char *server_url,    // URL to be accessed
         {
           //                   DLT(DLT_APPLICATION, for(i=0; i != payload_length;
           //                   i++){payload[i] = 0;})
-          if ( esp_http_client_read_response(client, payload, payload_length) >= 0 )
+          int response_length = esp_http_client_read_response(client, payload, payload_length - 1); // Leave room for the NUL
+          if ( response_length >= 0 )
           {
+            payload[response_length] = 0; // The response is not NUL terminated
             if ( esp_http_client_get_status_code(client) != 200 )
             {
               DLT(DLT_CRITICAL, printf("HTTP POST Status = %d, content_length = %" PRId64, esp_http_client_get_status_code(client),

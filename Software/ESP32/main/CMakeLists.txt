@@ -1,20 +1,21 @@
-file(GLOB_RECURSE app_sources ${CMAKE_SOURCE_DIR}/main/*.*)
-idf_component_register(SRCS ${app_sources} 
-                    INCLUDE_DIRS "."
-                    "." 
-                    "./tcpip" 
-                    "./drivers"
-                    "./html"
-                    "C:/Users/allan/esp/esp-idf/esp-idf/components/freertos/FreeRTOS-Kernel/include/freertos"
-                    "C:/Users/allan/esp/esp-idf/esp-idf/components/hal/include/hal"
-                    "C:/Users/allan/esp/esp-idf/esp-idf/components/esp_adc/include/esp_adc"
-                    "C:/Users/allan/esp/esp-idf/esp-idf/components/esp_http_server/include"
-                    
-                    EMBED_FILES 
-                    "html/FreeEtarget.html"
-                    "html/FreeEtargetIcon.png"
-                    "html/help.html"
-                    "html/menu.html"
-                    "tcpip/ca_cert.pem"
-                    )
+# Compile every C file under main/.  Paths are relative to this file and use the
+# exact on-disk case so the project builds on case-sensitive file systems
+# (Linux, Docker, CI) as well as on Windows and macOS.
+#
+# NOTE: drivers/sockets.c is a vendored copy of the lwIP socket layer from
+# ESP-IDF 5.3.1 with a local change in sockaddr_to_ipaddr_port().  It replaces
+# the ESP-IDF version at link time.  Keep it until that change has been reviewed.
+# (Run "idf.py reconfigure" after adding or removing a .c file.)
+file(GLOB_RECURSE app_sources "${CMAKE_CURRENT_SOURCE_DIR}/*.c")
 
+idf_component_register(SRCS ${app_sources}
+                       INCLUDE_DIRS "."
+                                    "TCPIP"
+                                    "drivers"
+                                    "HTML"
+                       EMBED_FILES "HTML/FreeETarget.html"
+                                   "HTML/FreeETargetIcon.png"
+                                   "HTML/help.html"
+                                   "HTML/menu.html"
+                                   "TCPIP/ca_cert.pem"
+                       )

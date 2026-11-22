@@ -27,10 +27,10 @@
 #include "stdio.h"
 #include "token.h"
 #include "serial_io.h"
-#include "wifi.h"
+#include "WiFi.h"
 #include "bluetooth.h"
 #include "timer.h"
-#include "ota.h"
+#include "OTA.h"
 #include "calibrate.h"
 
 /*
@@ -575,6 +575,7 @@ void show_echo(void)
   }
 
   dip = read_DIP();
+  xs_lock();                                                      // _xs is built up over several statements
   strcpy(_xs, "\"DIP\":              \"");                         // Display the digital input
   for ( i = 0; i != 4; i++ )
   {
@@ -589,6 +590,7 @@ void show_echo(void)
   }
   strcat(_xs, "\"");
   serial_to_all(_xs, ALL);
+  xs_unlock();
 
   SEND(ALL, sprintf(_xs, "\"VERSION\":          %s, ", SOFTWARE_VERSION);)          // Current software version
   esp_ota_get_partition_description(running_partition, &running_app_info);

@@ -11,10 +11,10 @@
  ******************************************************************************/
 
 #include "ctype.h"
-#include "driver\gpio.h"
+#include "driver/gpio.h"
 #include "esp_timer.h"
 #include "esp_random.h"
-#include "gpio_types.h"
+#include "hal/gpio_types.h"
 #include "serial_io.h"
 #include "stdbool.h"
 #include "stdio.h"
@@ -38,7 +38,7 @@
 #include "pwm.h"
 #include "timer.h"
 #include "bluetooth.h"
-#include "ota.h"
+#include "OTA.h"
 #include "calibrate.h"
 
 extern volatile time_count_t paper_time;
@@ -1091,14 +1091,13 @@ void test_build_fake_shots(void)
 static void test_display_all_scores(void)
 {
   unsigned int i;
-  char         str[MEDIUM_TEXT];
+  char         str[SCORE_TEXT];
 
   for ( i = 0; i != SHOT_SPACE; i++ )
   {
     if ( record[i].session_type & SESSION_VALID )
     {
-      build_json_score(&record[i], SCORE_ALL);
-      strcpy(str, _xs);
+      build_json_score(&record[i], SCORE_ALL, str, sizeof(str));
       SEND(ALL, sprintf(_xs, "\r\n%s", str);)
     }
   }
@@ -1169,23 +1168,20 @@ static void test_rapidfire(void)
 #define TARGET_RADIUS 25.0
 void mfs_test_build_json_score(void)
 {
-  char       str[LARGE_STRING];
+  char       str[SCORE_TEXT];
   static int test_shot = 0;
 
   record[0].shot = test_shot++;
   record[0].x_mm = ((real_t)(esp_random() % 2000) - 1000) / 1000.0 * TARGET_RADIUS; // Pick a random location
   record[0].y_mm = ((real_t)(esp_random() % 2000) - 1000) / 1000.0 * TARGET_RADIUS;
 
-  build_json_score(&record[0], SCORE_USB);
-  strncpy(str, _xs, sizeof(str));
+  build_json_score(&record[0], SCORE_USB, str, sizeof(str));
   SEND(CONSOLE, sprintf(_xs, "\r\nUSB:       %s", str);)
 
-  build_json_score(&record[0], SCORE_TCPIP);
-  strncpy(str, _xs, sizeof(str));
+  build_json_score(&record[0], SCORE_TCPIP, str, sizeof(str));
   SEND(TCPIP, sprintf(_xs, "\r\nTCPIP:     %s", str);)
 
-  build_json_score(&record[0], SCORE_BLUETOOTH);
-  strncpy(str, _xs, sizeof(str));
+  build_json_score(&record[0], SCORE_BLUETOOTH, str, sizeof(str));
   SEND(AUX | BLUETOOTH | RS485, sprintf(_xs, "\r\nAUX: %s", str);)
 
   SEND(ALL, sprintf(_xs, _DONE_);)

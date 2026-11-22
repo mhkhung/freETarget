@@ -920,16 +920,18 @@ static void WiFi_start_new_connection(int sock) // Socket token to use
 {
   int  i;
   char str[SHORT_TEXT];
+  char score[SCORE_TEXT]; // Replayed score message
 
   /*
-   *  Build up a mask of existing WiFi connections
+   *  Build up a mask of existing WiFi connections.  Only the TCPIP bits
+   *  change, the other connections (ex CONSOLE) are left alone.
    */
   connection_list &= ~(TCPIP);
   for ( i = 0; i != MAX_SOCKETS; i++ ) // How many connections do we have?
   {
     if ( socket_list[i] != AVAILABLE_SOCKET )
     {
-      connection_list = (TCPIP_0) << i;
+      connection_list |= (TCPIP_0) << i;
     }
   }
 
@@ -943,8 +945,11 @@ static void WiFi_start_new_connection(int sock) // Socket token to use
   {
     if ( (record[i].session_type & SESSION_VALID) != 0 )
     {
-      send_replay(&record[i], i);
-      send(sock, _xs, strlen(_xs), 0);
+      send_replay(&record[i], i, score, sizeof(score));
+      if ( score[0] != 0 )
+      {
+        send(sock, score, strlen(score), 0);
+      }
     }
   }
 

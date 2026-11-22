@@ -6,12 +6,11 @@
  *
  *-------------------------------------------------------------*/
 #include "esp_timer.h"
-#include "driver\gpio.h"
+#include "driver/gpio.h"
 #include "esp_random.h"
 #include "stdio.h"
 #include "math.h"
 #include "nvs.h"
-#include "mpu_wrappers.h"
 #include "assert.h"
 #include "esp_http_server.h"
 #include "esp_event.h"
@@ -88,6 +87,7 @@ extern void         gpio_init(void);
 
 void freeETarget_init(void)
 {
+  xs_lock_init(); // Must exist before any SEND() and before other tasks start
   run_state = IN_STARTUP;
   is_trace  = DLT_FATAL | DLT_CRITICAL | DLT_INFO;
 
@@ -442,6 +442,7 @@ unsigned int reduce(void)
 {
   static unsigned int paper_shot     = 0; // Count of reduced shots
   static unsigned int paper_shot_out = 0; // Count of missed shots
+  char                score[SCORE_TEXT];  // JSON score message
 
   run_state |= IN_REDUCTION;
 
@@ -469,16 +470,16 @@ unsigned int reduce(void)
       {
         prepare_score(&record[shot_out], shot_out, NOT_MISSED_SHOT);
 
-        build_json_score(&record[shot_out], SCORE_USB);
-        serial_to_all(_xs, (CONSOLE | AUX_PORT));
+        build_json_score(&record[shot_out], SCORE_USB, score, sizeof(score));
+        serial_to_all(score, (CONSOLE | AUX_PORT));
 
-        build_json_score(&record[shot_out], SCORE_TCPIP);
-        serial_to_all(_xs, TCPIP);
+        build_json_score(&record[shot_out], SCORE_TCPIP, score, sizeof(score));
+        serial_to_all(score, TCPIP);
 
         if ( (json_remote_modes & REMOTE_MODE_CLIENT) != 0 )
         {
-          build_json_score(&record[shot_out], SCORE_TCPIP);
-          http_native_request(json_remote_url, METHOD_POST, _xs, sizeof(_xs));
+          build_json_score(&record[shot_out], SCORE_TCPIP, score, sizeof(score));
+          http_native_request(json_remote_url, METHOD_POST, score, sizeof(score));
         }
 
         /*
@@ -518,8 +519,8 @@ unsigned int reduce(void)
           prepare_score(&record[shot_out], shot_out, MISSED_SHOT); // Show a miss
         }
       }
-      shot_out = (shot_out + 1) % SHOT_SPACE;                      // Increment to the next shot
     }
+    shot_out = (shot_out + 1) % SHOT_SPACE; // Increment to the next shot (also skips a shot with a sensor fault)
   }
 
   /*
@@ -597,22 +598,26 @@ void start_new_session(int session_type) //
     case SESSION_PRINT + SESSION_EMPTY:
     case SESSION_PRINT + SESSION_SIGHT:
     case SESSION_PRINT + SESSION_MATCH:
+    {
+      char score[SCORE_TEXT];                                  // JSON score message
+
       for ( i = 0; i != shot_out; i++ )
       {
         if ( ((record[i].session_type & SESSION_VALID) != 0)   // The session has valid data
              && (record[i].session_type % SESSION_PRINT) == (session_type % SESSION_PRINT) )
         {
-          build_json_score(&record[i], SCORE_USB);             // Send out to the USB
-          serial_to_all(_xs, ALL);
+          build_json_score(&record[i], SCORE_USB, score, sizeof(score)); // Send out to the USB
+          serial_to_all(score, ALL);
 
           if ( (json_remote_modes & REMOTE_MODE_CLIENT) != 0 ) // Send out to the server
           {
-            build_json_score(&record[i], SCORE_TCPIP);
-            http_native_request(json_remote_url, METHOD_POST, _xs, sizeof(_xs));
+            build_json_score(&record[i], SCORE_TCPIP, score, sizeof(score));
+            http_native_request(json_remote_url, METHOD_POST, score, sizeof(score));
           }
         }
       }
       break;
+    }
   }
 
   /*

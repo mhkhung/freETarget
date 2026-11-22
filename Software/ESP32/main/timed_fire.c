@@ -6,7 +6,7 @@
  *
  *-------------------------------------------------------------*/
 #include "esp_timer.h"
-#include "driver\gpio.h"
+#include "driver/gpio.h"
 #include "stdio.h"
 
 #include "freETarget.h"
@@ -418,9 +418,11 @@ static void timed_fire_next_state(void)
       {
         if ( score_mode == 'D' ) // Report missed During the event
         {
+          char score[SCORE_TEXT];                        // JSON score message
+
           record[shot_in].shot_time = run_time_ms();
-          build_json_score(&record[shot_in], SCORE_USB); // Build the JSON for the miss
-          serial_to_all(_xs, ALL);
+          build_json_score(&record[shot_in], SCORE_USB, score, sizeof(score)); // Build the JSON for the miss
+          serial_to_all(score, ALL);
           shot_in  = (shot_in + 1) % SHOT_SPACE;         // Move to the next shot
           shot_out = shot_in;                            // Show that we have already aquired this shot, so we don't report the miss
         }
@@ -466,11 +468,13 @@ static void timed_fire_exit(void)
    */
   if ( score_mode == 'E' )                           // Report missed
   {
+    char score[SCORE_TEXT];                          // JSON score message
+
     while ( shot_in != json_rapid_count )            // Look through all of the shots
     {
       record[shot_in].shot_time = run_time_ms();
-      build_json_score(&record[shot_in], SCORE_USB); // Build the JSON for the miss
-      serial_to_all(_xs, ALL);
+      build_json_score(&record[shot_in], SCORE_USB, score, sizeof(score)); // Build the JSON for the miss
+      serial_to_all(score, ALL);
       shot_in  = (shot_in + 1) % SHOT_SPACE;         // Move to the next shot
       shot_out = shot_in;                            // Show that we have already aquired this shot, so we don't report the miss
     }

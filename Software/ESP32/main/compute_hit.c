@@ -9,8 +9,8 @@
 #include "stdio.h"
 #include "math.h"
 #include "stdbool.h"
-#include "gpio_types.h"
-#include "driver\gpio.h"
+#include "hal/gpio_types.h"
+#include "driver/gpio.h"
 
 #include "freETarget.h"
 #include "analog_io.h"
@@ -549,11 +549,16 @@ void prepare_score(shot_record_t *shot,        //  record
  * connection is made, all of the accumulated scores are sent out
  * to update the new PC client
  *
+ * out is set to an empty string if the shot should not be replayed
+ *
  *--------------------------------------------------------------*/
 
 void send_replay(shot_record_t *shot,                                                       //  record
-                 unsigned int   shot_number)
+                 unsigned int   shot_number,                                                // Shot index (unused)
+                 char          *out,                                                        // Where to put the JSON
+                 size_t         out_size)                                                   // Size of out
 {
+  out[0] = 0;                                                                               // Assume nothing to replay
 
   if ( (shot->session_type & SESSION_VALID) != 0 )                                          // Do we have a shot record?
   {
@@ -561,16 +566,8 @@ void send_replay(shot_record_t *shot,                                           
          || ((json_session_type & SESSION_SIGHT) && (shot->session_type & SESSION_SIGHT))   // Only sighters
          || ((json_session_type & SESSION_MATCH) && (shot->session_type & SESSION_MATCH)) ) // Only match
     {
-      build_json_score(shot, SCORE_TCPIP);
+      build_json_score(shot, SCORE_TCPIP, out, out_size);
     }
-    else                                                                                    // No shot record
-    {
-      _xs[0] = 0;
-    }
-  }
-  else                                                                                      // No shot record
-  {
-    _xs[0] = 0;
   }
 
   /*

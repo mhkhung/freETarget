@@ -10,9 +10,10 @@
  *
  ******************************************************************************/
 #include <stdio.h>
+#include <stdarg.h>
 #include "string.h"
 #include "ctype.h"
-#include "driver\gpio.h"
+#include "driver/gpio.h"
 #include "math.h"
 #include "esp_timer.h"
 #include "esp_random.h"
@@ -26,7 +27,7 @@
 #include "gpio_define.h"
 #include "diag_tools.h"
 #include "analog_io.h"
-#include "wifi.h"
+#include "WiFi.h"
 #include "serial_io.h"
 
 #define SHOT_TIME_TO_SECONDS(x) ((real_t)(x)) / 1000000.0
@@ -454,15 +455,20 @@ void echo_serial(int duration, // Duration in clock ticks
  *
  * @brief:    Assemble the score as a JSON string based on the format
  *
- * @return:   _xs contains the JSON string
+ * @return:   out contains the JSON string (always NUL terminated)
  *
  *----------------------------------------------------------------
  *
  * Build up a JSON string for the score.
  *
- * The function is called with the shot record to be reported and
- * a pointer to a string of fields used to build up the JSON
- * output.
+ * The function is called with the shot record to be reported, a
+ * pointer to a string of fields used to build up the JSON output,
+ * and the buffer to write it into.  Output that does not fit in
+ * the buffer is truncated.
+ *
+ * The caller owns the output buffer, so this function can be
+ * called from any task without disturbing the shared _xs buffer.
+ * SCORE_TEXT is large enough for every score format.
  *
  * IMPORTANT
  *
@@ -470,14 +476,45 @@ void echo_serial(int duration, // Duration in clock ticks
  * which must be the first field printed.
  *
  *--------------------------------------------------------------*/
-
-void build_json_score(shot_record_t *shot, // Pointer to shot record
-                      const char    *fields)
+static void score_append(char *out, size_t out_size, size_t *used, const char *format, ...)
 {
-  char       str[MEDIUM_TEXT];             // String holding buffers
-  static int ts, tx, ty;                   // Test Values
+  va_list args;
+  int     n;
 
-  _xs[0] = 0;
+  if ( *used + 1 >= out_size ) // No room left
+  {
+    return;
+  }
+
+  va_start(args, format);
+  n = vsnprintf(out + *used, out_size - *used, format, args);
+  va_end(args);
+
+  if ( n > 0 )
+  {
+    *used += n;
+    if ( *used >= out_size ) // Output was truncated
+    {
+      *used = out_size - 1;
+    }
+  }
+
+  return;
+}
+
+void build_json_score(shot_record_t *shot,     // Pointer to shot record
+                      const char    *fields,   // Fields to include
+                      char          *out,      // Where to put the JSON string
+                      size_t         out_size) // Size of out
+{
+  static int ts, tx, ty;                       // Test Values
+  size_t     used = 0;                         // Bytes written to out so far
+
+  if ( (out == NULL) || (out_size == 0) )
+  {
+    return;
+  }
+  out[0] = 0;
 
   /*
    *  Loop and build up the payload
@@ -487,87 +524,89 @@ void build_json_score(shot_record_t *shot, // Pointer to shot record
     switch ( *fields )
     {
       case SCORE_LEFT_BRACE:
-        sprintf(str, "{{{{{"); // Start the opening bracket.  Send five to wake up the client and get it to start parsing the JSON.  The
-                               // client will ignore the first four and use the fifth as the start of the JSON.
+        score_append(out, out_size, &used, "{{{{{"); // Start the opening bracket.  Send five to wake up the client and get it to start
+                                                     // parsing the JSON.  The client will ignore the first four and use the fifth as
+                                                     // the start of the JSON.
         break;
 
       case SCORE_RIGHT_BRACE:
-        if ( is_trace & DLT_SCORE )
+        if ( (is_trace & DLT_SCORE) && (shot != NULL) ) // shot is NULL when priming the HTTP client
         {
-          sprintf(str, ", \"n\":%d, \"e\":%d, \"s\":%d, \"w\":%d }", shot->timer_count[N], shot->timer_count[E], shot->timer_count[S],
-                  shot->timer_count[W]);                     // Hardware values
+          score_append(out, out_size, &used, ", \"n\":%d, \"e\":%d, \"s\":%d, \"w\":%d }", shot->timer_count[N], shot->timer_count[E],
+                       shot->timer_count[S], shot->timer_count[W]); // Hardware values
         }
         else
         {
-          sprintf(str, "}");                                 // End the closing bracket
+          score_append(out, out_size, &used, "}");                  // End the closing bracket
         }
         break;
 
-      case SCORE_NEW_LINE:                                   // Add a newline
-        sprintf(str, "\n");
+      case SCORE_NEW_LINE:                                          // Add a newline
+        score_append(out, out_size, &used, "\n");
         break;
 
-      case SCORE_TEST:                                       // Prime for HTTP
-        sprintf(str, "\"%s\":%d, \"x\":%d, \"y\":%d, \"r\":0, \"a\":0,\"target\":%d", _SHOT_, ts, tx, ty, http_target_type());
+      case SCORE_TEST:                                              // Prime for HTTP
+        score_append(out, out_size, &used, "\"%s\":%d, \"x\":%d, \"y\":%d, \"r\":0, \"a\":0,\"target\":%d", _SHOT_, ts, tx, ty,
+                     http_target_type());
         ts++;
         tx = (tx + 5) % 103;
-        ty = (ty + 7) % 103;                                 // Test values to show that the function works
+        ty = (ty + 7) % 103;                                        // Test values to show that the function works
         break;
 
-      case SCORE_PRIME:                                      // Prime for HTTP
-        sprintf(str, "\"%s\":0, \"x\":0, \"y\":0, \"r\":0, \"a\":0,\"target\":%d", _SHOT_, http_target_type());
+      case SCORE_PRIME:                                             // Prime for HTTP
+        score_append(out, out_size, &used, "\"%s\":0, \"x\":0, \"y\":0, \"r\":0, \"a\":0,\"target\":%d", _SHOT_, http_target_type());
         break;
 
-      case SCORE_SHOT:                                       // Shot number
-        sprintf(str, "\"%s\":%d", _SHOT_, (shot->shot) + 1); // The client wants shots to start at 1
+      case SCORE_SHOT:                                              // Shot number
+        score_append(out, out_size, &used, "\"%s\":%d", _SHOT_, (shot->shot) + 1); // The client wants shots to start at 1
         break;
 
-      case SCORE_MISS:                                       // Miss
-        sprintf(str, ", \"miss\":%d", shot->miss);
+      case SCORE_MISS:                                              // Miss
+        score_append(out, out_size, &used, ", \"miss\":%d", shot->miss);
         break;
 
-      case SCORE_SESSION:                                    // Session type
-        sprintf(str, ", \"session_type\":%d", shot->session_type);
+      case SCORE_SESSION:                                           // Session type
+        score_append(out, out_size, &used, ", \"session_type\":%d", shot->session_type);
         break;
 
-      case SCORE_TIME:                                       // Time
-        sprintf(str, ", \"time\":%ld, \"time_to_go\":%ld", shot->shot_time, time_to_go);
+      case SCORE_TIME:                                              // Time
+        score_append(out, out_size, &used, ", \"time\":%ld, \"time_to_go\":%ld", shot->shot_time, time_to_go);
         break;
 
-      case SCORE_ELAPSED:                                    // Time since shooting began
-        sprintf(str, ", \"elapsed_time\":%lds", run_time_seconds());
+      case SCORE_ELAPSED:                                           // Time since shooting began
+        score_append(out, out_size, &used, ", \"elapsed_time\":%lds", run_time_seconds());
         break;
 
-      case SCORE_XY:                                         // X
-        sprintf(str, ", \"x\":%4.2f, \"y\":%4.2f", shot->x_mm, shot->y_mm);
+      case SCORE_XY:                                                // X
+        score_append(out, out_size, &used, ", \"x\":%4.2f, \"y\":%4.2f", shot->x_mm, shot->y_mm);
         break;
 
-      case SCORE_POLAR:                                      // Polar
-        sprintf(str, ", \"r\":%6.2f, \"a\":%6.2f", shot->radius, radians_to_degrees(shot->angle));
+      case SCORE_POLAR:                                             // Polar
+        score_append(out, out_size, &used, ", \"r\":%6.2f, \"a\":%6.2f", shot->radius, radians_to_degrees(shot->angle));
         break;
 
-      case SCORE_HARDWARE:                                   // Hardware
-        sprintf(str, ", \"n\":%d, \"e\":%d, \"s\":%d, \"w\":%d", (int)shot->timer_count[N + 0], (int)shot->timer_count[E + 0],
-                (int)shot->timer_count[S + 0], (int)shot->timer_count[W + 0]);
+      case SCORE_HARDWARE:                                          // Hardware
+        score_append(out, out_size, &used, ", \"n\":%d, \"e\":%d, \"s\":%d, \"w\":%d", (int)shot->timer_count[N + 0],
+                     (int)shot->timer_count[E + 0], (int)shot->timer_count[S + 0], (int)shot->timer_count[W + 0]);
         break;
 
-      case SCORE_TARGET:                                     // Target type
-        sprintf(str, ", \"target\":%d ", http_target_type());
+      case SCORE_TARGET:                                            // Target type
+        score_append(out, out_size, &used, ", \"target\":%d ", http_target_type());
         break;
 
-      case SCORE_EVENT:                                      // Event data
-        sprintf(str, ", \"athelete\":\"%s\", \"event\":\"%s\", \"target_name\":\"%s\"", json_athlete, json_event, json_target_name);
+      case SCORE_EVENT:                                             // Event data
+        score_append(out, out_size, &used, ", \"athelete\":\"%s\", \"event\":\"%s\", \"target_name\":\"%s\"", json_athlete, json_event,
+                     json_target_name);
         break;
 
       default:
         break;
     }
     fields++;
-    strcat(_xs, str);
   }
 
   /*
-   * Put in the closing } and return
+   * All done, return
    */
   return;
 }

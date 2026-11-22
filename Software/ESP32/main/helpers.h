@@ -22,7 +22,7 @@ void         send_keep_alive(void);                                     // Send 
 void         bye(unsigned int force_bye);                               // Set to true to force a shutdown
 void         bye_tick(void);                                            // Tick for the bye state machine
 void         echo_serial(int delay, int in_port, int out_port);         // Echo the serial port
-void         build_json_score(shot_record_t *shot, const char *format); // Create the JSON score string
+void         build_json_score(shot_record_t *shot, const char *format, char *out, size_t out_size); // Create the JSON score string in out
 int          http_target_type(void);                                    // Cnovert the target type to a number
 void         squish(char *source, char *destination);                   // Convert the uri into an arguement
 unsigned int hamming_weight(unsigned int word);                         // Add up the numbr of bits in a word

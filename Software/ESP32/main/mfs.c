@@ -20,7 +20,7 @@
 #include "serial_io.h"
 #include "timer.h"
 #include "mfs.h"
-#include "ota.h"
+#include "OTA.h"
 #include "helpers.h"
 
 /*

@@ -22,7 +22,7 @@
 #include "json.h"
 #include "timer.h"
 #include "serial_io.h"
-#include "wifi.h"
+#include "WiFi.h"
 #include "diag_tools.h"
 #include "http_client.h"
 #include "http_server.h"
@@ -61,7 +61,7 @@ void app_main(void)
   /*
    * Everything is ready, start the threads.  Low task priority number == low priority
    */
-  xTaskCreate(freeETarget_target_loop, "freeETarget_target_loop", K4, NULL, MUST_RUN, NULL);
+  xTaskCreate(freeETarget_target_loop, "freeETarget_target_loop", K6, NULL, MUST_RUN, NULL); // K6: score buffer + HTTP client
   serial_flush(ALL);
   vTaskDelay(TICK_10ms);
 
@@ -69,7 +69,7 @@ void app_main(void)
   serial_flush(ALL);
   vTaskDelay(TICK_10ms);
 
-  xTaskCreate(freeETarget_synchronous, "freeETarget_synchronous", K4, NULL, TIMED, NULL);
+  xTaskCreate(freeETarget_synchronous, "freeETarget_synchronous", K6, NULL, TIMED, NULL); // K6: timed fire score buffer
   serial_flush(ALL);
   vTaskDelay(TICK_10ms);
 
@@ -80,7 +80,7 @@ void app_main(void)
   xTaskCreate(WiFi_tcp_server_task, "WiFi_tcp_server", K4, NULL, NETWORK, NULL);
   serial_flush(ALL);
   vTaskDelay(TICK_10ms);
-  xTaskCreate(tcpip_accept_poll, "tcpip_accept_poll", K4, NULL, POLLING, NULL);
+  xTaskCreate(tcpip_accept_poll, "tcpip_accept_poll", K6, NULL, POLLING, NULL); // K6: replay score buffer
   serial_flush(ALL);
   vTaskDelay(TICK_10ms);
   xTaskCreate(tcpip_socket_poll_0, "tcpip_socket_poll_0", K4, NULL, POLLING, NULL);

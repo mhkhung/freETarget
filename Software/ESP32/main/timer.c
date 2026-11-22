@@ -16,12 +16,12 @@
 
 #include "stdbool.h"
 #include "esp_timer.h"
-#include "driver\timer.h"
+#include "driver/timer.h"
 
 #include "freETarget.h"
 #include "helpers.h"
 #include "diag_tools.h"
-#include "gpio_types.h"
+#include "hal/gpio_types.h"
 #include "json.h"
 #include "serial_io.h"
 #include "mfs.h"

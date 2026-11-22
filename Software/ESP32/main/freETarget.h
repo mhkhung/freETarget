@@ -46,7 +46,12 @@
 #define IF_NOT(x) if ( (run_state & (x)) == 0 )
 #define IF_IN(x)  if ( (run_state & (x)) != 0 )
 
-#define SEND(who, message) {message} serial_to_all(_xs, who);
+#define SEND(who, message)                                                                                                                 \
+  {                                                                                                                                        \
+    xs_lock();                                                                                                                             \
+    {message} serial_to_all(_xs, who);                                                                                                     \
+    xs_unlock();                                                                                                                           \
+  }
 
 #define IS_DC_WITNESS      (json_paper_time != 0) // Determine the witness paper drive (DC Motor)
 #define IS_STEPPER_WITNESS (json_step_count != 0) // Determine the witness paper drive (stepper)
@@ -60,6 +65,7 @@
 #define MEDIUM_TEXT          256         // Medimum length strings are 256 long
 #define SHORT_TEXT           128         // Short text strings are 128 long
 #define TINY_TEXT            64          // Tiny text strings are 64 long
+#define SCORE_TEXT           LONG_TEXT   // Room for the longest score message (SCORE_ALL + athlete/event/target names)
 
 /*
  * Oscillator Features

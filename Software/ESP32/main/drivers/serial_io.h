@@ -30,6 +30,9 @@ void check_new_connection(void);                     // Check to see if a new co
 void RS485_transmit(int new_state);                  // Control the RS485 transmitter
 void RS485_transmit_off(void);                       // Turn off the RS485 transmitter after a delay
 void RS485_test(void);                               // Test the RS485 port
+void xs_lock_init(void);                             // Create the lock protecting the shared _xs buffer
+void xs_lock(void);                                  // Take exclusive use of _xs (recursive, task context only)
+void xs_unlock(void);                                // Release _xs
 
 /*
  *  Definitions

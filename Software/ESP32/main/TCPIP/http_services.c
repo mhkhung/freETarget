@@ -204,7 +204,10 @@ static esp_err_t service_get_FreeETarget(httpd_req_t *req)
  *------------------------------------------------------------*/
 static esp_err_t service_get_events(httpd_req_t *req)
 {
-  char str[MEDIUM_TEXT]; // Temporary
+  char           str[SCORE_TEXT + TINY_TEXT]; // Event header followed by the score
+  shot_record_t *score_shot   = NULL;         // Shot to include in the event (if any)
+  const char    *score_fields = NULL;         // Score fields to include (NULL for none)
+  size_t         used;                        // Bytes used in str
 
   DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "service_get_events(%s) event_mode: %d", req->uri, event_mode);))
 
@@ -214,8 +217,8 @@ static esp_err_t service_get_events(httpd_req_t *req)
   if ( http_shot < 0 )                        // First time through
   {
     strcpy(str, "event:new_shotData\nid:\ndata: ");
-    build_json_score(NULL, SCORE_HTTP_PRIME); // Send the new shot
-    http_shot = 0;                            // Next time reply with the first shot
+    score_fields = SCORE_HTTP_PRIME;          // Send the new shot
+    http_shot    = 0;                         // Next time reply with the first shot
   }
 
   /*
@@ -256,16 +259,22 @@ static esp_err_t service_get_events(httpd_req_t *req)
       case AUTO:                                          // If the event is in auto mode
         DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "Shooting event auto mode");))
         strcpy(str, "event:new_shotData\nid:\ndata: ");
-        build_json_score(&record[http_shot], SCORE_HTTP); // Send the new shot
-        http_shot = (http_shot + 1) % SHOT_SPACE;         // and bump up next one
+        score_shot   = &record[http_shot];                // Send the new shot
+        score_fields = SCORE_HTTP;
+        http_shot    = (http_shot + 1) % SHOT_SPACE;      // and bump up next one
         break;
     }
   }
 
   /*
-   * Prepare and send the payload
+   * Prepare and send the payload.  The score is built straight into str
+   * (not _xs) so other tasks cannot change it while it is being sent.
    */
-  strcat(str, _xs);
+  used = strlen(str);
+  if ( score_fields != NULL )
+  {
+    build_json_score(score_shot, score_fields, str + used, sizeof(str) - used - 2); // Leave room for the "\n\n"
+  }
   strcat(str, "\n\n");
   httpd_resp_set_hdr(req, "application/json", "new_shotData");
   httpd_resp_set_type(req, "text/event-stream");
@@ -409,8 +418,9 @@ static esp_err_t service_get_menu(httpd_req_t *req)
  *------------------------------------------------------------*/
 static esp_err_t service_get_help(httpd_req_t *req)
 {
-  const char *resp_str;            // Reply to server
-  char        my_name[SHORT_TEXT]; // Temporary string
+  const char *resp_str;                     // Reply to server
+  char        my_name[SHORT_TEXT];          // Temporary string
+  char        line[MEDIUM_TEXT + SHORT_TEXT]; // One line of the reply (not _xs, the send may block)
   int         i, j;
 
   DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "service_get_help(%s)", req->uri);))
@@ -427,8 +437,8 @@ static esp_err_t service_get_help(httpd_req_t *req)
   /*
    *  Send the installed events
    */
-  sprintf(_xs, "<br><p class=MsoNormal><b><span style='font-size:14.0pt;line-height:115%%'>INSTALLED SERVICES</span></b></p>");
-  httpd_resp_send_chunk(req, _xs, strlen(_xs));
+  snprintf(line, sizeof(line), "<br><p class=MsoNormal><b><span style='font-size:14.0pt;line-height:115%%'>INSTALLED SERVICES</span></b></p>");
+  httpd_resp_send_chunk(req, line, strlen(line));
 
   i = 0;
   while ( uri_list[i].port != 0 )
@@ -437,15 +447,16 @@ static esp_err_t service_get_help(httpd_req_t *req)
     {
       if ( uri_list[i].port == DEFAULT_HTTP_PORT )
       {
-        sprintf(_xs, "<br>%s.local%s &nbsp;&nbsp;&nbsp;&nbsp;%s", my_name, uri_list[i].uri_struct.uri, uri_list[i].help);
+        snprintf(line, sizeof(line), "<br>%s.local%s &nbsp;&nbsp;&nbsp;&nbsp;%s", my_name, uri_list[i].uri_struct.uri,
+                 uri_list[i].help);
       }
       else
       {
-        sprintf(_xs, "<br>%s.local:%d%s. &nbsp;&nbsp;&nbsp;&nbsp;%s", my_name, uri_list[i].port, uri_list[i].uri_struct.uri,
-                uri_list[i].help);
+        snprintf(line, sizeof(line), "<br>%s.local:%d%s. &nbsp;&nbsp;&nbsp;&nbsp;%s", my_name, uri_list[i].port,
+                 uri_list[i].uri_struct.uri, uri_list[i].help);
       }
 
-      httpd_resp_send_chunk(req, _xs, strlen(_xs));
+      httpd_resp_send_chunk(req, line, strlen(line));
     }
     i++;
   }
@@ -478,11 +489,12 @@ static esp_err_t service_get_help(httpd_req_t *req)
  *------------------------------------------------------------*/
 static esp_err_t service_get_json(httpd_req_t *req)
 {
-  char my_name[SHORT_TEXT];               // Target name
+  char my_name[SHORT_TEXT];                         // Target name
+  char argument[CONFIG_HTTPD_MAX_URI_LEN + 1];      // JSON command taken from the URI (never longer than the URI)
 
   DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "service_get_json(%s)", req->uri);))
-  squish(req->uri, _xs);                  // Go through the uri and keep the argument portion
-  tcpip_socket_2_queue(_xs, strlen(_xs)); // Put the data into the TCPIP queue
+  squish(req->uri, argument);                       // Go through the uri and keep the argument portion
+  tcpip_socket_2_queue(argument, strlen(argument)); // Put the data into the TCPIP queue
 
   /*
    * Set the header to indicate that this is a json request, then wait till it's done
@@ -544,8 +556,9 @@ static esp_err_t service_get_FreeETarget_png(httpd_req_t *req)
  *------------------------------------------------------------*/
 static esp_err_t service_post_post(httpd_req_t *req)
 {
-  int ret;                      // Number of bytes remaining to be proceesed
-  int remaining;                // Bytes remaining to be processed
+  int  ret;                     // Number of bytes remaining to be proceesed
+  int  remaining;               // Bytes remaining to be processed
+  char buffer[MEDIUM_TEXT];     // Received data (not _xs, the receive may block)
 
   remaining = req->content_len; // Find out how long the transfer is
 
@@ -554,7 +567,7 @@ static esp_err_t service_post_post(httpd_req_t *req)
                                  */
   while ( remaining > 0 )
   {
-    if ( (ret = httpd_req_recv(req, _xs, MIN(remaining, sizeof(_xs)))) <= 0 )
+    if ( (ret = httpd_req_recv(req, buffer, MIN(remaining, sizeof(buffer)))) <= 0 )
     {
       if ( ret == HTTPD_SOCK_ERR_TIMEOUT )
       {
@@ -565,12 +578,13 @@ static esp_err_t service_post_post(httpd_req_t *req)
     }
 
                        /*
-                        *  The buffer _xs contains (at most) sizeof(_xs) bytes
+                        *  The buffer contains (at most) sizeof(buffer) bytes
                         *  Do womething with it
                         */
 
     printf("\r\n=========== RECEIVED DATA ==========\r\n");
-    printf("%.*s", ret, _xs);
+    printf("%.*s", ret, buffer);
+    remaining -= ret;
     printf("\r\n====================================\r\n");
   }
 
@@ -628,6 +642,7 @@ static esp_err_t service_get_post2(httpd_req_t *req)
 static esp_err_t service_get_who(httpd_req_t *req)
 {
   char                   my_name[SHORT_TEXT];
+  char                   reply[SCORE_TEXT];  // Reply to the client (not _xs, the send may block)
   const esp_partition_t *running_partition = esp_ota_get_running_partition();
   esp_app_desc_t         running_app_info;
   static int             cycle_count = 0;
@@ -639,7 +654,7 @@ static esp_err_t service_get_who(httpd_req_t *req)
   target_name(my_name); // Get the target name
   httpd_resp_set_hdr(req, "get_who", my_name);
 
-  sprintf(_xs,
+  snprintf(reply, sizeof(reply),
           "Serial Number: %d"
           "<br>Target ID: %s"
           "<br>Version: %s"
@@ -651,7 +666,7 @@ static esp_err_t service_get_who(httpd_req_t *req)
           json_serial_number, my_name, SOFTWARE_VERSION, running_app_info.version, json_athlete, json_target_name, json_event,
           cycle_count); // Fill in the target name
 
-  httpd_resp_send(req, _xs, HTTPD_RESP_USE_STRLEN);
+  httpd_resp_send(req, reply, HTTPD_RESP_USE_STRLEN);
   cycle_count++;
   return ESP_OK;
 }
@@ -677,8 +692,11 @@ static esp_err_t service_get_who(httpd_req_t *req)
  *
  *------------------------------------------------------------*/
 #define SELECTED                                                                                                                           \
-  strcat(_xs, " selected ");                                                                                                               \
-  i = strlen(_xs);
+  strcat(buffer, " selected ");                                                                                                            \
+  i = strlen(buffer);
+
+#define HTTP_PRINTF_SIZE   512 // Size of the http_printf output buffer
+#define HTTP_PRINTF_MARGIN 32  // Flush when this close to full (one step adds at most strlen(" selected ") bytes)
 
 static void http_printf(const char  *format, // Format string
                         httpd_req_t *req,    // HTTP request to return to
@@ -687,8 +705,9 @@ static void http_printf(const char  *format, // Format string
 {
   int          i;
   unsigned int remainder;                    // Number of bytes remaining to be processed
+  char         buffer[HTTP_PRINTF_SIZE];     // Output buffer (not _xs, the send may block)
 
-  _xs[0]    = 0;
+  buffer[0] = 0;
   i         = 0;
   remainder = size;
   /*
@@ -705,7 +724,8 @@ static void http_printf(const char  *format, // Format string
       switch ( *format )
       {
         case '^':
-          strcat(_xs, "^");           // If we have a double ^ then just output a single ^
+          strcat(buffer, "^");        // If we have a double ^ then just output a single ^
+          i = strlen(buffer);
           break;
 
         case 'A':
@@ -759,20 +779,20 @@ static void http_printf(const char  *format, // Format string
     }
     else
     {
-      _xs[i++] = *format++;           // Copy the character to the buffer
+      buffer[i++] = *format++;        // Copy the character to the buffer
       remainder--;                    // Decrement the number of bytes remaining
     }
-    _xs[i] = 0;                       // Null terminate the string
+    buffer[i] = 0;                    // Null terminate the string
 
     /*
      *  See if it is time to send out the buffer.
      */
-    if ( i >= sizeof(_xs) - 512 ) // If we have almost filled the buffer?
+    if ( i >= (int)(sizeof(buffer) - HTTP_PRINTF_MARGIN) ) // If we have almost filled the buffer?
     {
-      printf("%s", _xs);          // Print the buffer to the console
-      httpd_resp_send_chunk(req, _xs, i);
-      i      = 0;                 // Reset the index
-      _xs[0] = 0;                 // Null terminate the string
+      printf("%s", buffer);       // Print the buffer to the console
+      httpd_resp_send_chunk(req, buffer, i);
+      i         = 0;              // Reset the index
+      buffer[0] = 0;              // Null terminate the string
     }
   }
 
@@ -781,8 +801,8 @@ static void http_printf(const char  *format, // Format string
    */
   if ( i != 0 )                         // If we have something to send
   {
-    _xs[i] = 0;                         // Null terminate the string
-    httpd_resp_send_chunk(req, _xs, i); // Send the string to the client
+    buffer[i] = 0;                         // Null terminate the string
+    httpd_resp_send_chunk(req, buffer, i); // Send the string to the client
   }
   httpd_resp_send_chunk(req, NULL, 0);  // End the response
   return;

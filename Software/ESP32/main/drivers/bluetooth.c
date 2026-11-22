@@ -207,7 +207,8 @@ static void send_AT(void)
  *******************************************************************************/
 void Bluetooth_start_new_connection(void) // Socket token to use
 {
-  int i;
+  int  i;
+  char score[SCORE_TEXT]; // Replayed score message
 
   /*
    *  Inform the PC what is going on
@@ -218,8 +219,8 @@ void Bluetooth_start_new_connection(void) // Socket token to use
   {
     if ( (record[i].session_type & SESSION_VALID) != 0 )
     {
-      build_json_score(&record[i], SCORE_BLUETOOTH);
-      serial_to_all(_xs, BLUETOOTH);
+      build_json_score(&record[i], SCORE_BLUETOOTH, score, sizeof(score));
+      serial_to_all(score, BLUETOOTH);
     }
   }
 

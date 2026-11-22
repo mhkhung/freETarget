@@ -26,4 +26,5 @@ void http_send_string_end(); // Stop sending a string to the client and pump it 
  */
 #define DEFAULT_HTTP_PORT 80   // Use the stanard port 80 for HTTP requests
 #define EVENT_HTTP_PORT   8080 // Use port 8080 for the event control
+#define HTTP_SERVER_STACK (6 * 1024) // Stack for each web server task (ESP-IDF default is 4096)
 #endif
