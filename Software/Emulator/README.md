@@ -45,6 +45,17 @@ connects to WebSockets on port 18080 automatically; no `?ws=` parameter is neede
 Use the athlete page or dashboard buttons to start/end sessions. “Reset ESP32”
 reboots the virtual CPU while retaining its flash journal. Ctrl-C stops the
 emulator and saves flash; running again without `--fresh` resumes that flash.
+To stop an emulator running in the background or in another terminal
+(including a smoke test), run:
+
+```sh
+python3 Software/Emulator/emulator.py stop
+```
+
+It finds this checkout's `esp-emu` processes and asks each owning `run`/`smoke`
+process to shut down, which saves flash. It interrupts any `esp-emu` left
+without an owner (also saving flash), and kills whatever is still running
+after `--timeout` seconds (default 10).
 `--fresh` resets only the emulator's `target.bin`, including saved shots and
 configuration. The smoke test has its own separate flash and ports.
 

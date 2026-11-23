@@ -272,6 +272,7 @@ def serve(port, fresh):
             runtime.start()
             print(f"Virtual target: http://127.0.0.1:{port}/", flush=True)
             print(f"Firmware console: {RUNTIME / 'target-console.log'}", flush=True)
+            print("Stop with Ctrl-C, or from any terminal: python3 Software/Emulator/emulator.py stop", flush=True)
             server.serve_forever()
         finally:
             runtime.close()
