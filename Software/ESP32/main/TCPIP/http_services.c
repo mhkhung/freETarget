@@ -390,10 +390,13 @@ static esp_err_t service_get_help(httpd_req_t *req)
  * control to json.c where the data is processed.
  *
  *------------------------------------------------------------*/
+#define JSON_WAIT_MS 5000 // Longest a /json request waits for its command
+
 static esp_err_t service_get_json(httpd_req_t *req)
 {
   char my_name[SHORT_TEXT];                         // Target name
   char argument[CONFIG_HTTPD_MAX_URI_LEN + 1];      // JSON command taken from the URI (never longer than the URI)
+  int  waited;                                      // ms waited for the command to finish
 
   DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "service_get_json(%s)", req->uri);))
   squish(req->uri, argument);                       // Go through the uri and keep the argument portion
@@ -405,12 +408,21 @@ static esp_err_t service_get_json(httpd_req_t *req)
   target_name(&my_name);       // Get the target name
   httpd_resp_set_hdr(req, "get_json", my_name);
   http_send_string_start(req); // Start sending a string to the client
-  do
-  {
-    vTaskDelay(ONE_SECOND);    // Give up time for the data to be processed
-  } while ( (run_state & IN_HTTP) == IN_HTTP ); // Wait until the queue is not full
 
-  http_send_string_end(); // Stop sending a string to the client
+  /*
+   * Wait until the JSON task has read the command and finished with it.
+   * Its output comes back to this request through http_send_string().
+   */
+  for ( waited = 0; waited < JSON_WAIT_MS; waited += 10 )
+  {
+    vTaskDelay(TICK_10ms);
+    if ( (waited >= 50) && (serial_available(TCPIP) == 0) && ((run_state & IN_HTTP) == 0) )
+    {
+      break;                   // Read and done
+    }
+  }
+
+  http_send_string_end(req);   // Stop sending a string to the client
 
   /*
    * All done, return
