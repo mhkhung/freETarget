@@ -137,7 +137,7 @@ EXTERN int    json_wifi_dhcp;                 // TRUE if the DHCP server is enab
 EXTERN char   json_wifi_static_ip[IP_SIZE];   // Static IP assigned to the target
 EXTERN char   json_wifi_gateway[IP_SIZE];     // Text of WiFI gateway mask
 EXTERN char   json_wifi_ssid[SSID_SIZE];      // Text of WiFI SSID
-EXTERN char   json_wifi_pwd[PWD_SIZE];        // Text of WiFI password
+EXTERN char   json_wifi_pwd[PWD_SIZE + 1];    // Text of WiFI password (WPA allows 63 characters)
 EXTERN char   json_wifi_server_url[URL_SIZE]; // Remote Server URL
 EXTERN char   json_wifi_server_key[IP_SIZE];  // Remote Server key
 EXTERN int    json_wifi_hidden;               // Hide the SSID if enabled
@@ -161,9 +161,9 @@ EXTERN int    json_aux_mode;                  // Enable comms from the AUX port
 EXTERN char   json_remote_url[URL_SIZE];      // Where are the messages going?
 EXTERN int    json_remote_active[URL_SIZE];   // Is there a remote present
 EXTERN char   json_remote_key[URL_SIZE];      // Security key if nessary
-EXTERN char   json_athlete[SMALL_STRING];     // Athelete shooting
-EXTERN char   json_event[SMALL_STRING];       // Event being shot
-EXTERN char   json_target_name[SMALL_STRING]; // Target being shot at
+EXTERN char   json_athlete[LARGE_STRING];     // Athelete shooting (kept in RAM only, never written to flash)
+EXTERN char   json_event[LARGE_STRING];       // Event being shot
+EXTERN char   json_target_name[LARGE_STRING]; // Target being shot at
 EXTERN char   json_name_text[SMALL_STRING];   // Target name, ex (Target 54))
 EXTERN int    json_remote_modes;              // What modes are available to talk to a remote server
 EXTERN int    json_session_type;              // What kind of session is this?

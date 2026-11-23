@@ -92,7 +92,7 @@ void nonvol_write_i32(char *name, int *value);    // Write a value to nonvol
 #define NONVOL_REMOTE_ACTIVE       "REMOTE_ACTIVE"       // Send score to a remote server
 #define NONVOL_REMOTE_URL          "REMOTE_URL"          // URL of the remote server
 #define NONVOL_REMOTE_KEY          "REMOTE_KEY"          // Remote server access key
-#define NONVOL_ATHELETE            "ATHELETE"            // Remember the athelete name
+#define NONVOL_ATHELETE            "ATHELETE"            // No longer used: older firmware saved the athlete name here
 #define NONVOL_EVENT               "EVENT"               // Remember the shooting event
 #define NONVOL_TARGET_NAME         "TARGET_NAME"         // Rememver the target name
 #define NONVOL_LOCK                "LOCK"                // Password for the target

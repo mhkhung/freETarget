@@ -122,7 +122,7 @@ const json_message_t JSON[] = {
     {SHOW + LOCK, "\"WIFI_GATEWAY\":",   (int *)&json_wifi_gateway,   IS_TEXT + IP_SIZE,      0,                  NONVOL_WIFI_GATEWAY,        0,          9 },
     {SHOW + LOCK, "\"WIFI_HIDDEN\":",    &json_wifi_hidden,           IS_INT32,               0,                  NONVOL_WIFI_HIDDEN,         0,          1 },
     {SHOW + LOCK, "\"WIFI_IP\":",        (int *)&json_wifi_static_ip, IS_TEXT + IP_SIZE,      0,                  NONVOL_WIFI_IP,             0,          9 },
-    {SHOW + LOCK, "\"WIFI_PWD\":",       (int *)&json_wifi_pwd,       IS_SECRET + PWD_SIZE,   0,                  NONVOL_WIFI_PWD,            0,          0 },
+    {SHOW + LOCK, "\"WIFI_PWD\":",       (int *)&json_wifi_pwd,       IS_SECRET + PWD_SIZE + 1, 0,                NONVOL_WIFI_PWD,            0,          0 },
     {SHOW + LOCK, "\"WIFI_RESET\":",     &json_wifi_reset_first,      IS_INT32,               0,                  NONVOL_WIFI_RESET_FIRST,    1,          3 },
     {SHOW + LOCK, "\"WIFI_SSID\":",      (int *)&json_wifi_ssid,      IS_TEXT + SSID_SIZE,    0,                  NONVOL_WIFI_SSID,           0,          0 },
     {SHOW + LOCK, "\"X_OFFSET\":",       (int *)&json_x_offset,       IS_FLOAT,               0,                  NONVOL_X_OFFSET,            0,          7 },
@@ -136,7 +136,7 @@ const json_message_t JSON[] = {
     {HIDE + LOCK, "\"SOUTH_Y\":",        &json_south_y,               IS_INT32,               0,                  NONVOL_SOUTH_Y,             0,          0 },
     {HIDE + LOCK, "\"WEST_X\":",         &json_west_x,                IS_INT32,               0,                  NONVOL_WEST_X,              0,          0 },
     {HIDE + LOCK, "\"WEST_Y\":",         &json_west_y,                IS_INT32,               0,                  NONVOL_WEST_Y,              0,          0 },
-    {SHOW,        "\"ATHLETE\":",        (int *)&json_athlete,        IS_TEXT + LARGE_STRING, 0,                  NONVOL_ATHELETE,            0,          10},
+    {SHOW,        "\"ATHLETE\":",        (int *)&json_athlete,        IS_TEXT + LARGE_STRING, 0,                  0,                          0,          10}, // RAM only (privacy)
     {SHOW,        "\"EVENT\":",          (int *)&json_event,          IS_TEXT + LARGE_STRING, 0,                  NONVOL_EVENT,               0,          10},
     {SHOW,        "\"TARGET_NAME\":",    (int *)json_target_name,     IS_TEXT + LARGE_STRING, 0,                  NONVOL_TARGET_NAME,         0,          10},
     {HIDE,        "\"LOCK\":",           0,                           IS_INT32,               &lock_target,       0,                          0,          12},
@@ -319,8 +319,9 @@ static void handle_json(void)
   int   x;
   float f;
   int   i, j, k;
-  char  s[64];          // Place to store a string
+  char  s[real_t_MASK + 1]; // Place to store a string (the longest a table entry allows)
   int   m;
+  int   size;               // Size of the destination, including the terminating NUL
 
   run_state |= IN_HTTP; // Parsing a JON string
 
@@ -359,25 +360,32 @@ static void handle_json(void)
 
             case IS_TEXT:                                   // Convert to text
             case IS_SECRET:
-              while ( input_JSON[i + k] != '"' )            // Skip to the opening quote
+              size = JSON[j].convert & real_t_MASK;         // The destination buffer's size
+              while ( (input_JSON[i + k] != '"') && (input_JSON[i + k] != 0) ) // Skip to the opening quote
               {
                 k++;
               }
-              k++;                                          // Advance to the text
+              if ( input_JSON[i + k] == '"' )
+              {
+                k++;                                        // Advance to the text
+              }
 
               m    = 0;
               s[0] = 0;                                     // Put in a null
-              while ( input_JSON[i + k] != '"' )            // Skip to the opening quote
+              while ( (input_JSON[i + k] != '"') && (input_JSON[i + k] != 0) ) // Copy up to the closing quote
               {
-                s[m] = input_JSON[i + k];                   // Save the value
-                m++;
-                s[m] = 0;                                   // Null terminate
+                if ( m < (size - 1) )                       // Longer text is cut to fit
+                {
+                  s[m] = input_JSON[i + k];                 // Save the value
+                  m++;
+                  s[m] = 0;                                 // Null terminate
+                }
                 k++;
               }
 
               if ( JSON[j].value != NULL )
               {
-                strcpy((char *)JSON[j].value, s);           // Save the value
+                strcpy((char *)JSON[j].value, s);           // Fits: s is no longer than the destination
               }
 
               if ( JSON[j].non_vol != 0 )                   // Save to persistent storage if present

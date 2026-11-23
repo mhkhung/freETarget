@@ -51,7 +51,17 @@ def main():
                 raise RuntimeError("Could not find " + pattern)
             helpers.append(found.group())
         (build / "helpers_host.inc").write_text("\n\n".join(helpers) + "\n")
-        for name in ("test_json_stream", "test_timed_fire", "test_helpers"):
+        (build / "json_host.h").write_text(without_includes((MAIN / "json.h").read_text()))
+        source = (MAIN / "json.c").read_text()
+        parts = []
+        for pattern in (r"^static bool good_input\(unsigned int conversion, // What kind of input is it\?.*?^\}",
+                        r"^static void handle_json\(void\)\n\{.*?^\}"):
+            found = re.search(pattern, source, re.MULTILINE | re.DOTALL)
+            if found is None:
+                raise RuntimeError("Could not find " + pattern)
+            parts.append(found.group())
+        (build / "json_parse_host.inc").write_text("\n\n".join(parts) + "\n")
+        for name in ("test_json_stream", "test_timed_fire", "test_helpers", "test_json_text"):
             binary = build / name
             subprocess.run(compiler + flags + ["-I" + str(build), "-I" + str(MAIN / "drivers"),
                            str(HERE / (name + ".c")), "-o", str(binary), "-lm"], check=True)
