@@ -12,6 +12,7 @@ header{padding:19px 28px;border-bottom:1px solid var(--line);display:flex;gap:16
 <main><div class="layout">
 <section class="panel"><div class="body"><span class="label">Shot generator</span><h1>Click to fire</h1><p>Sensor arrivals travel through the firmware’s real scoring path.</p>
 <canvas id="target" width="1000" height="1000" aria-label="Virtual target; click to generate a shot"></canvas>
+<div class="row" style="margin-top:8px"><label>Face <select id="face" title="Starts a new practice session on this face"><option value="pistol">10 m air pistol</option><option value="rifle">10 m air rifle</option></select></label><button id="zoomOut" title="Zoom out" aria-label="Zoom out">−</button><select id="extent" aria-label="View"><option value="card">Card</option><option value="sensors">Sensors</option><option value="lanes">Adjacent lanes</option></select><button id="zoomIn" title="Zoom in" aria-label="Zoom in">+</button><span id="zoomText" style="color:var(--muted);font-size:12px"></span></div>
 <div class="row between legend"><span><i class="dot"></i>Expected <i class="dot actual"></i>Firmware result</span><span id="position">X 0.0 mm · Y 0.0 mm</span></div>
 <p class="note">Centre (0, 0) · X positive right · Y negative above centre · all positions in mm</p>
 <p class="note">Corner sensors: N ↖ · E ↗ · S ↘ · W ↙</p>
@@ -19,7 +20,7 @@ header{padding:19px 28px;border-bottom:1px solid var(--line);display:flex;gap:16
 <div class="row between"><span class="label">Last sensor arrivals</span><span id="speed" style="color:var(--muted);font-size:12px"></span></div>
 <table><thead><tr><th>Sensor</th><th>Arrival · µs</th><th>10 MHz ticks</th></tr></thead><tbody id="arrivals"><tr><td colspan="3">Click the target to begin.</td></tr></tbody></table>
 <div class="controls"><div class="row"><label>Temperature <input id="temperature" type="number" min="-20" max="40" value="20"> °C</label><label>Humidity <input id="humidity" type="number" min="0" max="100" value="50"> %</label><button id="environment">Apply</button></div>
-<div class="row"><label>Silence sensors:</label><label><input type="checkbox" value="N" class="missing"> N</label><label><input type="checkbox" value="E" class="missing"> E</label><label><input type="checkbox" value="S" class="missing"> S</label><label><input type="checkbox" value="W" class="missing"> W</label><label style="margin-left:auto">View <select id="extent"><option value="150">Target</option><option value="300">Adjacent lanes</option></select></label></div>
+<div class="row"><label>Silence sensors:</label><label><input type="checkbox" value="N" class="missing"> N</label><label><input type="checkbox" value="E" class="missing"> E</label><label><input type="checkbox" value="S" class="missing"> S</label><label><input type="checkbox" value="W" class="missing"> W</label></div>
 <div class="row"><button id="center" class="primary">Fire centre</button><button id="session">New practice session</button><button id="end">End session</button><button id="reset">Reset ESP32</button></div></div>
 <div id="message" role="status"></div><p class="note"><b>Simulation boundary:</b> boots through the real ROM and bootloader; the external oscillator POST is bypassed. Shots drive native pulse counters with virtual 10 MHz clock bursts. This does not validate analog electronics or acoustics.</p>
 </div></section>
@@ -28,32 +29,64 @@ header{padding:19px 28px;border-bottom:1px solid var(--line);display:flex;gap:16
 <script>
 "use strict";
 const $=id=>document.getElementById(id), canvas=$('target'), ctx=canvas.getContext('2d');
-let state=null, extent=150, busy=false, linked=false;
+let state=null, busy=false, linked=false;
+// Faces as in the athlete page: ring diameters in mm, ring 1 first.
+const FACES={pistol:{name:'10 m air pistol',event:'Pistol Practice',targetName:'freETarget.targets.AirPistol',card:170,black:59.5,caliber:4.5,
+  rings:[155.5,139.5,123.5,107.5,91.5,75.5,59.5,43.5,27.5,11.5]},
+  rifle:{name:'10 m air rifle',event:'Rifle Practice',targetName:'freETarget.targets.AirRifle',card:80,black:30.5,caliber:4.5,dot:true,
+  rings:[45.5,40.5,35.5,30.5,25.5,20.5,15.5,10.5,5.5,0.5]}};
+let face='pistol', view={cx:0,cy:0,extent:90};
 const latest=()=>state?.expected?.filter(s=>s.status==='fired').at(-1);
-function clickPosition(event, rect, extent) {
-  return {x: ((event.clientX - rect.left) / rect.width - .5) * 2 * extent,
-          y: ((event.clientY - rect.top) / rect.height - .5) * 2 * extent};
+function clickPosition(event, rect, view) {
+  return {x: view.cx + ((event.clientX - rect.left) / rect.width - .5) * 2 * view.extent,
+          y: view.cy + ((event.clientY - rect.top) / rect.height - .5) * 2 * view.extent};
+}
+function zoomAt(view, point, factor) {
+  // Keep the point under the cursor still; stay between ±1 mm and the neighbouring lanes.
+  const extent = Math.min(300, Math.max(1, view.extent * factor)), k = extent / view.extent;
+  const clamp = v => Math.max(-300, Math.min(300, v));
+  return {cx: clamp(point.x - (point.x - view.cx) * k), cy: clamp(point.y - (point.y - view.cy) * k), extent};
+}
+function presetView(name, face) {
+  return {cx: 0, cy: 0, extent: name === 'lanes' ? 300 : name === 'sensors' ? 150 : FACES[face].card / 2 + 5};
+}
+function firmwareFace(events) {
+  // The face the firmware is using: the latest hello or session change says.
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
+    if (('hello' in e || 'change' in e) && e.target) return ((e.target | 0) & ~1) === 110 ? 'rifle' : 'pistol';
+  }
+  return null;
 }
 function firmwarePosition(shot) {
   return {x: shot.x, y: -shot.y};
 }
-function draw(){const w=canvas.width,h=w/2,scale=w/(extent*2);ctx.clearRect(0,0,w,w);ctx.save();ctx.translate(h,h);ctx.scale(scale,scale);
-ctx.fillStyle='#efe9d8';ctx.fillRect(-85,-85,170,170);ctx.fillStyle='#202422';ctx.beginPath();ctx.arc(0,0,59.5/2,0,Math.PI*2);ctx.fill();
-for(const d of [155.5,139.5,123.5,107.5,91.5,75.5,59.5,43.5,27.5,11.5]){ctx.strokeStyle=d<=59.5?'#d4d4c0':'#52564e';ctx.lineWidth=.25;ctx.beginPath();ctx.arc(0,0,d/2,0,Math.PI*2);ctx.stroke()}
-ctx.setLineDash([1.5,1.5]);ctx.strokeStyle='#42645c';ctx.lineWidth=.4;ctx.beginPath();ctx.arc(0,0,(state?.sensor_diameter_mm||232)/2,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
-for(const {name,x,y} of state?.sensor_positions||[]){ctx.fillStyle='#8ae0b5';ctx.strokeStyle='#173d31';ctx.lineWidth=.5;ctx.beginPath();ctx.arc(x,y,2,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.save();ctx.translate(x,y);ctx.font='5px system-ui';ctx.textAlign='center';ctx.lineWidth=1.2;ctx.strokeText(name,0,-5);ctx.fillText(name,0,-5);ctx.restore()}
-for(const s of state?.expected||[]){if(s.status!=='fired')continue;ctx.strokeStyle='#35a877';ctx.lineWidth=.6;ctx.beginPath();ctx.moveTo(s.x-2,s.y);ctx.lineTo(s.x+2,s.y);ctx.moveTo(s.x,s.y-2);ctx.lineTo(s.x,s.y+2);ctx.stroke()}
-const reports=(state?.events||[]).filter(e=>'shot'in e && !e.history);for(const s of reports){if(s.miss)continue;const p=firmwarePosition(s);ctx.strokeStyle='#f5a54e';ctx.lineWidth=.6;ctx.beginPath();ctx.arc(p.x,p.y,2.25,0,Math.PI*2);ctx.stroke()}ctx.restore();}
+function draw(){const w=canvas.width,scale=w/(view.extent*2),px=1/scale,f=FACES[face];
+ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,w,w);ctx.setTransform(scale,0,0,scale,w/2-view.cx*scale,w/2-view.cy*scale);
+ctx.fillStyle='#efe9d8';ctx.fillRect(-f.card/2,-f.card/2,f.card,f.card);ctx.fillStyle='#202422';ctx.beginPath();ctx.arc(0,0,f.black/2,0,Math.PI*2);ctx.fill();
+for(const d of f.rings){const inBlack=d<=f.black;if(f.dot&&d===f.rings[9]){ctx.fillStyle='#efe9d8';ctx.beginPath();ctx.arc(0,0,d/2,0,Math.PI*2);ctx.fill();continue}
+ctx.strokeStyle=inBlack?'#d4d4c0':'#52564e';ctx.lineWidth=1.2*px;ctx.beginPath();ctx.arc(0,0,d/2,0,Math.PI*2);ctx.stroke()}
+ctx.setLineDash([6*px,6*px]);ctx.strokeStyle='#42645c';ctx.lineWidth=1.5*px;ctx.beginPath();ctx.arc(0,0,(state?.sensor_diameter_mm||232)/2,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+for(const {name,x,y} of state?.sensor_positions||[]){ctx.fillStyle='#8ae0b5';ctx.strokeStyle='#173d31';ctx.lineWidth=2*px;ctx.beginPath();ctx.arc(x,y,7*px,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.save();ctx.translate(x,y);ctx.font=`${18*px}px system-ui`;ctx.textAlign='center';ctx.lineWidth=4*px;ctx.strokeText(name,0,-12*px);ctx.fillText(name,0,-12*px);ctx.restore()}
+for(const s of state?.expected||[]){if(s.status!=='fired')continue;const a=8*px;ctx.strokeStyle='#35a877';ctx.lineWidth=2*px;ctx.beginPath();ctx.moveTo(s.x-a,s.y);ctx.lineTo(s.x+a,s.y);ctx.moveTo(s.x,s.y-a);ctx.lineTo(s.x,s.y+a);ctx.stroke()}
+const reports=(state?.events||[]).filter(e=>'shot'in e && !e.history);for(const s of reports){if(s.miss)continue;const p=firmwarePosition(s);ctx.strokeStyle='#f5a54e';ctx.lineWidth=2*px;ctx.beginPath();ctx.arc(p.x,p.y,f.caliber/2,0,Math.PI*2);ctx.stroke()}
+ctx.setTransform(1,0,0,1,0,0);$('zoomText').textContent=`${f.name} · view ±${view.extent<10?view.extent.toFixed(1):Math.round(view.extent)} mm · scroll to zoom`}
 async function post(path,body){const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error);return data}
 async function fire(x,y){if(busy||!state?.ready)return;busy=true;try{const missing=[...document.querySelectorAll('.missing:checked')].map(e=>e.value);const s=await post('shot',{x,y,missing});$('message').textContent=`Shot ${s.id} queued · X ${x.toFixed(1)} mm · Y ${y.toFixed(1)} mm`;}catch(e){$('message').textContent=e.message}finally{busy=false}}
-canvas.onpointermove=e=>{const p=clickPosition(e,canvas.getBoundingClientRect(),extent);$('position').textContent=`X ${p.x.toFixed(1)} mm · Y ${p.y.toFixed(1)} mm`};
-canvas.onclick=e=>{const p=clickPosition(e,canvas.getBoundingClientRect(),extent);fire(p.x,p.y)};
-$('center').onclick=()=>fire(0,0);$('extent').onchange=()=>{extent=+$('extent').value;draw()};
+canvas.onpointermove=e=>{const p=clickPosition(e,canvas.getBoundingClientRect(),view);$('position').textContent=`X ${p.x.toFixed(2)} mm · Y ${p.y.toFixed(2)} mm`};
+canvas.onclick=e=>{const p=clickPosition(e,canvas.getBoundingClientRect(),view);fire(p.x,p.y)};
+canvas.onwheel=e=>{e.preventDefault();view=zoomAt(view,clickPosition(e,canvas.getBoundingClientRect(),view),Math.exp(e.deltaY*0.0015));draw()};
+$('zoomIn').onclick=()=>{view=zoomAt(view,{x:view.cx,y:view.cy},0.5);draw()};
+$('zoomOut').onclick=()=>{view=zoomAt(view,{x:view.cx,y:view.cy},2);draw()};
+$('center').onclick=()=>fire(0,0);$('extent').onchange=()=>{view=presetView($('extent').value,face);draw()};
+$('face').onchange=async()=>{const f=FACES[$('face').value];try{await post('command',{EVENT:f.event,TARGET_NAME:f.targetName});await post('command',{SESSION:0});
+  face=$('face').value;view=presetView('card',face);$('extent').value='card';$('message').textContent=`New ${f.name} practice session.`;draw()}catch(e){$('face').value=face;$('message').textContent=e.message}};
 for(const [id,path,body] of [['session','command',{SESSION:0}],['end','command',{SESSION_END:0}],['reset','reset',{}]])$(id).onclick=async()=>{try{await post(path,body);$('message').textContent=id==='reset'?'Resetting the ESP32…':'Command sent.'}catch(e){$('message').textContent=e.message}};
 $('environment').onclick=async()=>{try{await post('environment',{temperature:+$('temperature').value,humidity:+$('humidity').value});$('message').textContent='Environment updated.'}catch(e){$('message').textContent=e.message}};
 async function poll(){try{const r=await fetch('/api/status');state=await r.json();$('status').textContent=state.ready?'Connected · '+(state.armed?'armed':'rearming'):state.error||'Booting firmware…';$('status').className=state.ready?'up':'';
 if(state.ready&&!linked){$('firmware').src=state.page_url;$('open').href=state.page_url;linked=true}
-for(const id of ['session','end','reset'])$(id).disabled=!state.ready;$('center').disabled=!state.ready||!state.armed;
+const now=firmwareFace(state.events);if(now&&now!==face&&document.activeElement!==$('face')){face=now;$('face').value=now;if($('extent').value==='card')view=presetView('card',face)}
+for(const id of ['session','end','reset','face'])$(id).disabled=!state.ready;$('center').disabled=!state.ready||!state.armed;
 const reports=state.events.filter(e=>'shot'in e&&!e.history);$('shots').textContent=reports.length;$('time').textContent=state.time_s.toFixed(1);
 const s=latest(),a=s?.result;$('error').textContent=s&&a&&!a.miss?Math.hypot(s.x-a.x,s.y-a.y).toFixed(3):'—';$('speed').textContent=state.speed_m_s.toFixed(2)+' m/s';
 if(s){$('arrivals').replaceChildren(...s.arrivals_ns.map((n,i)=>{const tr=document.createElement('tr');for(const value of ['NESW'[i],(n/1000).toFixed(2),n/100]){const td=document.createElement('td');td.textContent=value;tr.append(td)}return tr}))}
