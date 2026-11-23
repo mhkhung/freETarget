@@ -168,7 +168,7 @@ class Runtime:
         with self.board.lock:
             return {"ready": self.ready.is_set() and not self.board.error,
                     "error": self.board.error or self.monitor_error,
-                    "time_s": self.board.now_ns / 1e9, "armed": self.board.armed and not self.board.busy,
+                    "time_s": self.board.now_ns / 1e9, "armed": self.board.ready_to_fire(),
                     "sensor_reads": self.board.sensor_reads, "dac_writes": self.board.dac_writes,
                     "late_events": self.board.events_late, "dropped_events": self.board.dropped,
                     "max_lateness_ns": self.board.max_lateness_ns, "broadcasts_dropped": self.board.broadcasts_dropped,

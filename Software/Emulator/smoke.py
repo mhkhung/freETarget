@@ -80,7 +80,7 @@ def main():
             ws.send({"TIME": int(time.time())})
             cases = ((0, 0, None), (-30, -20, "N"), (30, -20, "E"), (30, 20, "S"), (-30, 20, "W"))
             for x, y, first_sensor in cases:
-                wait_until(lambda: runtime.board.armed and not runtime.board.busy)
+                wait_until(runtime.board.ready_to_fire)
                 generated = runtime.board.fire(x, y)
                 if first_sensor:
                     arrivals = generated["arrivals_ns"]
@@ -165,7 +165,7 @@ def main():
             ws.receive()
             ws.send({"AFTER": 0})
             collect(ws)
-            wait_until(lambda: runtime.board.armed and not runtime.board.busy)
+            wait_until(runtime.board.ready_to_fire)
             runtime.board.fire(15, -10)
             while True:
                 event = ws.receive()

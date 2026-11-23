@@ -6,7 +6,7 @@ import struct
 import unittest
 
 import protocol as wire
-from board import Board, CLOCK_PIN, crc8
+from board import ARM_SETTLE_NS, Board, CLOCK_PIN, crc8
 from physics import Target, speed_of_sound
 from websocket import WebSocket
 
@@ -137,6 +137,19 @@ class BoardTests(unittest.TestCase):
         self.assertTrue(any(14 in m and wire.fields(m[14])[1] == CLOCK_PIN for m in sent))
         with self.assertRaises(RuntimeError):
             board.fire(0, 0)
+
+    def test_waits_for_second_rearm_before_firing(self):
+        board = Board(0)
+        board.attached.set()
+        board.send = lambda data: None
+        board.armed, board.now_ns = True, 5_000_000_000
+        board.armed_at_ns = board.now_ns - ARM_SETTLE_NS // 2  # Only the ISR has re-armed
+        self.assertFalse(board.ready_to_fire())
+        with self.assertRaises(RuntimeError):
+            board.fire(0, 0)
+        board.now_ns += ARM_SETTLE_NS
+        self.assertTrue(board.ready_to_fire())
+        board.fire(0, 0)
 
     def test_sensor_crc_known_vector(self):
         self.assertEqual(crc8(bytes.fromhex("beef")), 0x92)

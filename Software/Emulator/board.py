@@ -10,6 +10,11 @@ RUN_PINS = (5, 6, 7, 15)
 HIGH_PINS = (16, 9, 10, 11)
 STOP_PIN, TRIGGER_PIN, OSC_PIN, CLOCK_PIN = 21, 47, 48, 8
 QUANTUM_NS = 100_000
+# After a shot the firmware re-arms twice: the 1 ms timer ISR when the ring
+# timer expires, then the foreground arm() up to one 10 ms-tick vTaskDelay(10)
+# (100 ms at CONFIG_FREERTOS_HZ=100) later. Its stop_timers() clears any
+# shot latched in between, so only fire once STOP has stayed high this long.
+ARM_SETTLE_NS = 200_000_000
 
 
 def crc8(data):
@@ -34,6 +39,7 @@ class Board(threading.Thread):
         self.now_ns = 0
         self.levels = (1 << 49) - 1
         self.armed = False
+        self.armed_at_ns = -ARM_SETTLE_NS  # Virtual time of the last STOP edge
         self.busy = False
         self.clock_until_ns = 0
         self.next_clock_ns = 0
@@ -56,7 +62,7 @@ class Board(threading.Thread):
         with self.lock:
             if self.error or not self.attached.is_set():
                 raise RuntimeError(self.error or "board not attached")
-            if not self.armed or self.busy:
+            if not self.ready_to_fire():
                 raise RuntimeError("target is booting or waiting for the previous shot to settle")
             shot = {"id": self.next_shot_id, "x": x, "y": y,
                     "arrivals_ns": arrivals, "missing": list(missing), "status": "queued"}
@@ -65,6 +71,11 @@ class Board(threading.Thread):
             self.commands.append(shot)
             self.busy = True
             return dict(shot)
+
+    def ready_to_fire(self):
+        """Armed, the previous shot settled, and STOP stable past the second re-arm."""
+        with self.lock:
+            return self.armed and not self.busy and self.now_ns - self.armed_at_ns >= ARM_SETTLE_NS
 
     def close(self):
         self.stop_event.set()
@@ -187,6 +198,7 @@ class Board(threading.Thread):
                     self.levels = self.levels | (1 << pin) if high else self.levels & ~(1 << pin)
                     if pin == STOP_PIN:
                         self.armed = high
+                        self.armed_at_ns = self.now_ns
                         if high and self.clock_until_ns <= self.now_ns:
                             self.busy = False
                         if not high:
