@@ -55,6 +55,12 @@ power loss.
   sighters or match, and reconnecting clients receive that session's shots.
 - **Status:** `{"ECHO":0}` shows a `JOURNAL` line.
 
+**Upgrading existing units:** an OTA update cannot change the partition table.
+A unit updated only over the air has no `shots` partition. It keeps working,
+but it keeps shots in RAM only and reports this at start-up. Flash once over USB
+(`idf.py flash`, or `write_flash @flash_args`) to add the partition. That flash
+does not move any existing partition, so NVS settings and calibration are kept.
+
 ## Time of day
 
 The board has no battery-backed clock, so the time of day is set again after
@@ -76,8 +82,18 @@ Shots fired before the clock is set are sent without `"utc"`. The journal
 records when the clock is set, so those shots get their time when they are
 replayed later (for example to a client that connects afterwards).
 
-**Upgrading existing units:** an OTA update cannot change the partition table.
-A unit updated only over the air has no `shots` partition. It keeps working,
-but it keeps shots in RAM only and reports this at start-up. Flash once over USB
-(`idf.py flash`, or `write_flash @flash_args`) to add the partition. That flash
-does not move any existing partition, so NVS settings and calibration are kept.
+## Ignoring shots on other lanes
+
+On older hardware the sensors also pick up shots on the next lane, and these
+are scored far outside the target. The target ignores any shot that lands
+farther from the centre than a limit: the shot is not saved, not sent and does
+not advance the witness paper. The status LED shows a miss and the console logs
+the distance.
+
+`{"MAX_RADIUS": <mm>}` sets the limit:
+
+- `0` (the default): 1.5 times the radius of the sensor ring (`SENSOR` / 2),
+  which surrounds the paper. That is 174 mm with the standard 232 mm sensor
+  ring.
+- A positive number: the limit in mm.
+- A negative number: no limit.

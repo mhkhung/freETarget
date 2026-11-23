@@ -440,6 +440,36 @@ unsigned int wait(void)
  *--------------------------------------------------------------*/
 #define FORCE_PAPER_MOVE 10               // Force a paper move if we get 10 misses
 
+/*
+ * A shot this far from the centre cannot have hit this target.  On
+ * older hardware the sensors also pick up the shots on the next lane,
+ * which land well outside the paper.
+ *
+ *   MAX_RADIUS  0  (default) 1.5 x the radius of the sensor ring, which surrounds the paper
+ *              >0  the limit in mm
+ *              <0  no limit
+ */
+#define AUTO_RADIUS_FACTOR 1.5
+
+static bool too_far(const shot_record_t *shot)
+{
+  double limit;
+
+  if ( json_max_radius < 0 )
+  {
+    return false;
+  }
+
+  limit = (json_max_radius > 0) ? (double)json_max_radius : AUTO_RADIUS_FACTOR * json_sensor_dia / 2.0;
+  if ( shot->radius <= limit )
+  {
+    return false;
+  }
+
+  DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "Shot ignored: %4.1f mm from the centre, the limit is %4.1f mm", shot->radius, limit);))
+  return true;
+}
+
 unsigned int reduce(void)
 {
   static unsigned int paper_shot     = 0; // Count of reduced shots
@@ -471,6 +501,12 @@ unsigned int reduce(void)
       if ( location != MISS ) // Was it a miss or face strike?
       {
         prepare_score(&record[shot_out], shot_out, NOT_MISSED_SHOT);
+        if ( too_far(&record[shot_out]) )       // Not on this target, do not save or report it
+        {
+          set_status_LED(LED_MISS);
+          shot_out = (shot_out + 1) % SHOT_SPACE;
+          continue;
+        }
         shot_journal_record(&record[shot_out]); // Save it before telling anyone, sets the shot number and seq
 
         build_json_score(&record[shot_out], SCORE_USB, score, sizeof(score));

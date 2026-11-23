@@ -82,6 +82,7 @@ const json_message_t JSON[] = {
     {SHOW + LOCK, "\"MFS_HOLD_C\":",     &json_mfs_hold_c,            IS_MFS,                 0,                  NONVOL_MFS_HOLD_C,          MFS_C_LED,  2 },
     {SHOW + LOCK, "\"MFS_HOLD_D\":",     &json_mfs_hold_d,            IS_MFS,                 0,                  NONVOL_MFS_HOLD_D,          MFS_D_LED,  2 },
     {SHOW + LOCK, "\"MFS_SELECT_CD\":",  &json_mfs_select_cd,         IS_MFS,                 0,                  NONVOL_MFS_SELECT_CD,       RAPID_HIGH, 2 },
+    {SHOW + LOCK, "\"MAX_RADIUS\":",     &json_max_radius,            IS_INT32,               0,                  NONVOL_MAX_RADIUS,          0,          18},
     {SHOW + LOCK, "\"MIN_RING_TIME\":",  &json_min_ring_time,         IS_INT32,               0,                  NONVOL_MIN_RING_TIME,       500,        0 },
     {SHOW + LOCK, "\"NAME_ID\":",        &json_name_id,               IS_INT32,               &show_names,        NONVOL_NAME_ID,             0,          0 },
     {SHOW + LOCK, "\"NAME_TEXT\":",      (int *)&json_name_text,      IS_TEXT + SSID_SIZE,    &show_names,        NONVOL_NAME_TEXT,           0,          8 },

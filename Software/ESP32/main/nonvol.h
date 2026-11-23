@@ -8,7 +8,7 @@
 #ifndef _NONVOL_H
 #define _NONVOL_H
 
-#define PS_VERSION   17                                   // Persistent storage version
+#define PS_VERSION   18                                   // Persistent storage version
 #define PS_UNINIT(x) (((x) == 0xABAB) || ((x) == 0xFFFF)) // Uninitilized value
 
 #define NAME_SPACE "freETarget"
@@ -46,6 +46,7 @@ void nonvol_write_i32(char *name, int *value);    // Write a value to nonvol
 #define NONVOL_1_RINGx10           "RINGx10"             // Size of the 1 ring in mm
 #define NONVOL_LED_PWM             "LED_PWM"             // LED PWM value
 #define NONVOL_SEND_MISS           "SEND_MISS"           // Send the MISS message when true
+#define NONVOL_MAX_RADIUS          "MAX_RADIUS"          // Ignore shots farther than this from the centre (mm, 0 = automatic, <0 = off)
 #define NONVOL_SERIAL_NO           "SERIAL_NO"           // EIN
 #define NONVOL_STEP_COUNT          "STEP_COUNT"          // Number of paper pulse steps
 #define NONVOL_STEP_RAMP           "STEP_RAMP"           // Amount to decreas every ramp cycle

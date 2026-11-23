@@ -108,6 +108,7 @@ EXTERN int    json_name_id;                   // Name Identifier
 EXTERN int    json_LED_PWM;                   // PWM Setting (%)
 EXTERN int    json_power_save;                // How long to run target before turning off LEDs
 EXTERN int    json_send_miss;                 // Sent the miss message when TRUE
+EXTERN int    json_max_radius;                // Ignore shots farther than this from the centre (mm, 0 = automatic, <0 = off)
 EXTERN int    json_serial_number;             // EIN
 EXTERN int    json_step_count;                // Number of times paper motor is stepped
 EXTERN int    json_step_ramp;                 // Time interval between ramp cycles
