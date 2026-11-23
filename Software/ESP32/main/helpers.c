@@ -524,9 +524,7 @@ void build_json_score(shot_record_t *shot,     // Pointer to shot record
     switch ( *fields )
     {
       case SCORE_LEFT_BRACE:
-        score_append(out, out_size, &used, "{{{{{"); // Start the opening bracket.  Send five to wake up the client and get it to start
-                                                     // parsing the JSON.  The client will ignore the first four and use the fifth as
-                                                     // the start of the JSON.
+        score_append(out, out_size, &used, "{");     // Start the opening bracket (the RS485 link adds more, see serial_io.c)
         break;
 
       case SCORE_RIGHT_BRACE:

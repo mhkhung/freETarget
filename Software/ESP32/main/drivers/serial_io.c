@@ -675,6 +675,16 @@ void serial_putch(char ch,
           RS485_transmit(RS485_TRANSMIT);            // Set RS485 to transmit
           RS485_timer += RS485_TRANSMIT_TIME;        // Extend the timer for a string
         }
+
+        /*
+         * On an RS485 link the first bytes after the transmitter turns on
+         * can be lost, so a score message is led by four spare '{'.  The
+         * PC client ignores the extra braces.
+         */
+        if ( ((json_aux_mode & RS485) != 0) && (str[0] == '{') )
+        {
+          uart_write_bytes(uart_aux, "{{{{", 4);
+        }
         uart_write_bytes(uart_aux, (const char *)str, strlen(str));
       }
     }

@@ -110,7 +110,7 @@ protocol is described in [main/TCPIP/ws_api.h](main/TCPIP/ws_api.h). In short:
   shots from the journal, then `{"caught_up": n}`, then new shots as they are
   fired. Nothing is lost or repeated across a dropped connection.
 - Shots look like the TCP ones (`"shot"`, `"seq"`, `"x"`, `"y"`, `"r"`, `"a"`,
-  `"utc"`, ...) plus `"session"`, without the `{{{{{` prefix. Session changes
+  `"utc"`, ...) plus `"session"`. Session changes
   arrive as `{"session": ..., "change": "new"}` or `"mode"`.
 - Any other message is an ordinary JSON command (`{"TIME": ...}`,
   `{"ECHO":0}`, ...). Command output comes back as plain text.
