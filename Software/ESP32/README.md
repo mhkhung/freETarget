@@ -115,6 +115,7 @@ protocol is described in [main/TCPIP/ws_api.h](main/TCPIP/ws_api.h). In short:
 - Any other message is an ordinary JSON command (`{"TIME": ...}`,
   `{"ECHO":0}`, ...). Command output comes back as plain text.
 
-`http://<target>:8080/live` is a small test page that plots the shots and has
-a command line. The API is on port 8080 because the port 80 server is busy for
-as long as the main page waits for a shot in `/events`.
+The main page (`http://<target>/`) and `http://<target>:8080/live`, a small
+test page with a command line, both use this API. It is on port 8080 so that a
+`/json` request on port 80, which waits for its command to finish, never holds
+up the shots.

@@ -26,8 +26,4 @@ void register_services(httpd_handle_t server, unsigned int port); // Pointer to 
 extern const my_uri_t uri_list[];                                 // List of active URLs
 #endif
 
-/*
- * Global Variables
- */
-extern int http_shot; // What shot are we procesing for the web based output
 #endif

@@ -34,6 +34,7 @@
 #include "freETarget.h"
 #include "diag_tools.h"
 #include "helpers.h"
+#include "json.h"
 #include "serial_io.h"
 #include "shot_journal.h"
 #include "wall_clock.h"
@@ -47,7 +48,7 @@
 #define WS_TEXT_SIZE    1024           // Largest console frame
 #define WS_STACK        (6 * 1024)
 #define WS_PRIORITY     4              // Same as the TCP polling tasks
-#define WS_SHOT_FIELDS  "SNQM?TUXP"    // Shot, session, seq, miss, session type, time, utc, x/y, polar
+#define WS_SHOT_FIELDS  "SNQM?TUXPOE"  // Shot, session, seq, miss, session type, time, utc, x/y, polar, target type, names
 
 /*
  * Shared between the web server task and the sender (client_lock)
@@ -308,16 +309,17 @@ static void drop(int fd, unsigned int gen)
 
 static bool send_hello(int fd)
 {
-  char     text[SHORT_TEXT * 3];
+  char     text[SHORT_TEXT * 4];
   char     name[SHORT_TEXT];
   uint8_t  source;
   uint32_t now = wall_clock_now(&source);
 
   target_name(name);
   snprintf(text, sizeof(text), "{\"hello\":\"freETarget\", \"version\":%s, \"name\":\"%.60s\", \"session\":%u, \"next_seq\":%u, "
-                               "\"utc\":%lu, \"clock\":\"%s\"}",
+                               "\"utc\":%lu, \"clock\":\"%s\", \"target\":%d, \"athelete\":\"%.60s\"}",
            SOFTWARE_VERSION, name, shot_journal_session(), shot_journal_next_seq(),
-           (source == JRNL_SOURCE_NONE) ? 0ul : (unsigned long)now, wall_clock_source_name(source));
+           (source == JRNL_SOURCE_NONE) ? 0ul : (unsigned long)now, wall_clock_source_name(source), http_target_type(),
+           json_athlete);
   return send_text(fd, text, strlen(text));
 }
 

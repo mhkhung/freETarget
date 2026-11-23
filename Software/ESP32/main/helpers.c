@@ -508,8 +508,7 @@ void build_json_score(shot_record_t *shot,     // Pointer to shot record
                       char          *out,      // Where to put the JSON string
                       size_t         out_size) // Size of out
 {
-  static int ts, tx, ty;                       // Test Values
-  size_t     used = 0;                         // Bytes written to out so far
+  size_t used = 0;                             // Bytes written to out so far
 
   if ( (out == NULL) || (out_size == 0) )
   {
@@ -544,18 +543,6 @@ void build_json_score(shot_record_t *shot,     // Pointer to shot record
 
       case SCORE_NEW_LINE:                                          // Add a newline
         score_append(out, out_size, &used, "\n");
-        break;
-
-      case SCORE_TEST:                                              // Prime for HTTP
-        score_append(out, out_size, &used, "\"%s\":%d, \"x\":%d, \"y\":%d, \"r\":0, \"a\":0,\"target\":%d", _SHOT_, ts, tx, ty,
-                     http_target_type());
-        ts++;
-        tx = (tx + 5) % 103;
-        ty = (ty + 7) % 103;                                        // Test values to show that the function works
-        break;
-
-      case SCORE_PRIME:                                             // Prime for HTTP
-        score_append(out, out_size, &used, "\"%s\":0, \"x\":0, \"y\":0, \"r\":0, \"a\":0,\"target\":%d", _SHOT_, http_target_type());
         break;
 
       case SCORE_SHOT:                                              // Shot number

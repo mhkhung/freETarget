@@ -42,30 +42,15 @@
 #define EXAMPLE_HTTP_QUERY_KEY_MAX_LEN (64)
 
 /*
- * Typedefs
- */
-typedef enum // Server modes
-{
-  IDLE = 0,  // 0 Idle mode, no event
-  AUTO,      // 1 Auto refresh mode
-  SINGLE,    // 2 Single shot mode
-  CLOSE,     // 3 Close the event
-  START      // 4 Start the event
-} event_mode_t;
-
-/*
  *  Variables
  */
-int                 http_shot  = -1;   // What shot number have we sent?
-static event_mode_t event_mode = IDLE; // Set the server mode to auto refresh
-static int          check_mask = 0;    // Mask of the checkboxes
+static int check_mask = 0;             // Mask of the checkboxes
 
 typedef struct
 {
   unsigned int port;
 } my_user_ctx_t;                       // Internal user context structure
 
-static const my_user_ctx_t http_events_ctx = {DEFAULT_HTTP_PORT};
 static const my_user_ctx_t event_menu_ctx  = {EVENT_HTTP_PORT};
 
 /*
@@ -78,7 +63,6 @@ static esp_err_t service_get_menu(httpd_req_t *req);                            
 static esp_err_t service_get_who(httpd_req_t *req);                                    // Target information page
 static esp_err_t service_get_FreeETarget_png(httpd_req_t *req);                        // Icon for the FreeETarget page
 static esp_err_t service_get_json(httpd_req_t *req);                                   // Webb ased JSON interface
-static esp_err_t service_get_events(httpd_req_t *req);                                 // Get shot events
 static esp_err_t service_get_live(httpd_req_t *req);                                   // WebSocket test page
 static esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err);       // Create a URL not found handler
 static esp_err_t service_post_post(httpd_req_t *req);
@@ -91,7 +75,6 @@ static void      http_printf(const char *format, httpd_req_t *req, unsigned int 
 
 const my_uri_t uri_list[] = {
     {DEFAULT_HTTP_PORT, "Display target",      URI("/", service_get_FreeETarget, NULL)                     }, // Main target page
-    {DEFAULT_HTTP_PORT, "",                    URI("/events", service_get_events, (void *)&http_events_ctx)},
 
     {DEFAULT_HTTP_PORT, "Help menu",           URI("/help", service_get_help, NULL)                        },
     {DEFAULT_HTTP_PORT, "Target info",         URI("/who", service_get_who, NULL)                          },
@@ -149,8 +132,9 @@ void register_services(httpd_handle_t server, // Pointer to active server
   }
 
   /*
-   * The WebSocket API goes on the control port.  The port 80 server
-   * is busy for as long as the main page waits in /events.
+   * The WebSocket API goes on the control port, so that a /json
+   * request on port 80 (which waits for the command to finish) never
+   * holds up the shots.
    */
   if ( port == EVENT_HTTP_PORT )
   {
@@ -194,12 +178,6 @@ static esp_err_t service_get_FreeETarget(httpd_req_t *req)
   DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "service_get_FreeETarget(%s)", req->uri);))
 
   /*
-   * Do the things we need to do to start a session
-   */
-  http_shot  = -1;   // Reset the shot counter
-  event_mode = AUTO; // Set the server mode to auto refresh
-
-  /*
    *  Send the reply to the client
    */
   target_name(my_name);                             // Get the target name
@@ -211,108 +189,6 @@ static esp_err_t service_get_FreeETarget(httpd_req_t *req)
   return ESP_OK;
 }
 
-/*----------------------------------------------------------------
- *
- * @function: service_get_events
- *
- * @brief:    Return events to the client
- *
- * @return:   esp_err_t, error type
- *
- *---------------------------------------------------------------
- *
- * On the first call it outputs an empty shot record to prime
- * the client's target and the returns control back to the web
- * page server.
- *
- * On subsequent calls, the function will wait here until a new
- * shot is availabe and that is sent.
- *
- *------------------------------------------------------------*/
-static esp_err_t service_get_events(httpd_req_t *req)
-{
-  char           str[SCORE_TEXT + TINY_TEXT]; // Event header followed by the score
-  shot_record_t *score_shot   = NULL;         // Shot to include in the event (if any)
-  const char    *score_fields = NULL;         // Score fields to include (NULL for none)
-  size_t         used;                        // Bytes used in str
-
-  DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "service_get_events(%s) event_mode: %d", req->uri, event_mode);))
-
-  /*
-   *  First time through, send an empty score
-   */
-  if ( http_shot < 0 )                        // First time through
-  {
-    strcpy(str, "event:new_shotData\nid:\ndata: ");
-    score_fields = SCORE_HTTP_PRIME;          // Send the new shot
-    http_shot    = 0;                         // Next time reply with the first shot
-  }
-
-  /*
-   * Second time trought Send the next score
-   */
-  else
-  {
-    while ( (http_shot == shot_in)                        // Wait for a shot to arrive
-            && (event_mode != CLOSE) )                    // or the event has finished
-    {
-      vTaskDelay(ONE_SECOND);
-      if ( time_since_last_shot == 0 )                    // Has the timer run out
-      {
-        event_mode = CLOSE;                               // Close the target
-      }
-    }
-
-    switch ( event_mode )                                 // Check the event mode
-    {
-      default:
-      case IDLE:                                          // If the event is idle, then do nothing
-        DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "Shooting event idle");))
-        strcpy(str, "event:idle\n");                      // Send an idle message
-        break;                                            // Return and wait for the next shot
-
-      case START:                                         // If the event is starting
-        DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "Shooting event started");))
-        strcpy(str, "event:start\nid:\ndata: ");          // Send a start message
-        event_mode = AUTO;                                // Set the mode to auto refresh
-        break;
-
-      case CLOSE:                                         // If the event is done
-        DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "Shooting event closed");))
-        strcpy(str, "event:close\nid:\ndata: ");          // Send a close message
-        break;
-
-      case SINGLE:                                        // If the event is in single shot mode
-      case AUTO:                                          // If the event is in auto mode
-        DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "Shooting event auto mode");))
-        strcpy(str, "event:new_shotData\nid:\ndata: ");
-        score_shot   = &record[http_shot];                // Send the new shot
-        score_fields = SCORE_HTTP;
-        http_shot    = (http_shot + 1) % SHOT_SPACE;      // and bump up next one
-        break;
-    }
-  }
-
-  /*
-   * Prepare and send the payload.  The score is built straight into str
-   * (not _xs) so other tasks cannot change it while it is being sent.
-   */
-  used = strlen(str);
-  if ( score_fields != NULL )
-  {
-    build_json_score(score_shot, score_fields, str + used, sizeof(str) - used - 2); // Leave room for the "\n\n"
-  }
-  strcat(str, "\n\n");
-  httpd_resp_set_hdr(req, "application/json", "new_shotData");
-  httpd_resp_set_type(req, "text/event-stream");
-  DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "event(%s)", str);))
-  httpd_resp_send(req, str, strlen(str));
-
-  /*
-   *  All done, return
-   */
-  return ESP_OK;
-}
 /*----------------------------------------------------------------
  *
  * @function: service_get_menu
@@ -411,7 +287,7 @@ static esp_err_t service_get_menu(httpd_req_t *req)
         start_new_session(check_mask & SIGHT);      // Start a new session
       }
 
-      DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "Setting event_mode: %d check_mask: %d", event_mode, check_mask);))
+      DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "Setting check_mask: %d", check_mask);))
     }
     i++;
   }

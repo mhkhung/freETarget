@@ -119,60 +119,91 @@
     countDown = 90 * 60 * 1000;
     d = new Date();
     correct = d.getTime();
-	setInterval(countDownTimer, 1000);
+    var countDownId = setInterval(countDownTimer, 1000);
 
     //  Draw any target to get started. 
     drawTarget(12, 45.5, 30.5, 2.5, 3, 6, 0.25, 1, 4.5);   // ISSF 10 Metre Air Rifle default.
 
 
     //
-    //  Listen for an event and display data.
+    //  Receive the shots over the WebSocket API (TCPIP/ws_api.h in the
+    //  firmware).  Reloading the page, or a dropped connection, replays
+    //  the shots of the current session that have not been shown yet.
     //
-    if (!!window.EventSource) { // Check if browser supports EventSource
-      var source = new EventSource('/events');
+    var lastSeq = 0;                // seq of the last journal entry received
+    var session = 0;                // Session being shown (0 = none yet)
 
-      source.addEventListener('open', function (e) {
-        console.log("Events Connected");
-      }, false);
+    function showShot(myObj) {      // Plot one shot (or the shot 0 "prime")
+      var ss = myObj.shot;
+      var xx = myObj.x;
+      var yy = myObj.y;
+      targetType = myObj.target;
+      athelete = myObj.athelete;
+      sx = xx;
+      sy = yy;
+      sr = Math.sqrt(xx * xx + yy * yy);
+      sn = ss;
 
-      source.addEventListener('error', function (e) {
-        if (e.target.readyState != EventSource.OPEN) {
-          console.log("Events Disconnected");
-        }
-      }, false);
+      xHistory[parseFloat(sn)] = parseFloat(xx);
+      yHistory[parseFloat(sn)] = parseFloat(yy);
+      snHistory[parseFloat(sn)] = parseFloat(ss);
 
-      source.addEventListener('close', function (e) {
-        console.log("Events closed by target");
-        source.close();
-        window.location.href = "/help"; // Redirect to Menu
-      }, false);
-
-      source.addEventListener('message', function (e) {
-        console.log("message", e.data);
-      }, false);
-
-      source.addEventListener('new_shotData', function (e) {
-        console.log("new_shotData", e.data);
-        var myObj = JSON.parse(e.data);
-        console.log(myObj);
-        var ss = myObj.shot;
-        var xx = myObj.x;
-        var yy = myObj.y;
-        targetType = myObj.target;
-        athelete = myObj.athelete;
-        sx = xx;
-        sy = yy;
-        sr = Math.sqrt(xx * xx + yy * yy);
-        sn = ss;
-
-        xHistory[parseFloat(sn)] = parseFloat(xx);
-        yHistory[parseFloat(sn)] = parseFloat(yy);
-        snHistory[parseFloat(sn)] = parseFloat(ss);
-
-
-        plotShot();
-      }, false);
+      plotShot();
     }
+
+    function newSession(n) {        // Clear the page when the target starts a new session
+      if ((session !== 0) && (n !== session)) {
+        startOver();
+      }
+      session = n;
+    }
+
+    function connectTarget() {
+      var ws = new WebSocket("ws://" + location.hostname + ":8080/ws");
+
+      ws.onopen = function () {
+        console.log("Target connected");
+      };
+
+      ws.onmessage = function (e) {
+        var myObj;
+        try {
+          myObj = JSON.parse(e.data);
+        } catch (err) {
+          return;                   // Command output, not for this page
+        }
+        console.log(myObj);
+
+        if ("hello" in myObj) {
+          if (myObj.next_seq <= lastSeq) {
+            lastSeq = 0;            // The target's journal was erased, start over
+          }
+          if (lastSeq === 0) {      // Draw the right target before the first shot
+            showShot({ shot: 0, x: 0, y: 0, target: myObj.target, athelete: myObj.athelete });
+          }
+          ws.send(JSON.stringify({ AFTER: lastSeq }));
+          if (myObj.clock === "none") {
+            ws.send(JSON.stringify({ TIME: Math.floor(Date.now() / 1000) })); // Give the target the time of day
+          }
+        } else if ("change" in myObj) {
+          if (myObj.change === "new") {
+            newSession(myObj.session);
+          }
+          lastSeq = myObj.seq;
+        } else if ("shot" in myObj) {
+          newSession(myObj.session);
+          lastSeq = myObj.seq;
+          showShot(myObj);
+        }
+      };
+
+      ws.onclose = function () {
+        console.log("Target disconnected, reconnecting");
+        setTimeout(connectTarget, 2000);
+      };
+    }
+
+    connectTarget();
     // 
     // Any Mice ?
     //
@@ -1207,7 +1238,8 @@
       countDown = 90 * 60 * 1000;
       d = new Date();
       correct = d.getTime();
-	  setInterval(countDownTimer, 1000);
+      clearInterval(countDownId);   // Restart the timer, do not add a second one
+      countDownId = setInterval(countDownTimer, 1000);
       //  Draw any target to get started.
 
       drawTarget(12, 45.5, 30.5, 2.5, 3, 6, 0.25, 1, 4.5);   // ISSF 10 Metre Air Rifle

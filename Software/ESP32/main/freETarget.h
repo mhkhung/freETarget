@@ -113,7 +113,6 @@
 #define SCORE_LEFT_BRACE  '{'         // Opening JSON string
 #define SCORE_RIGHT_BRACE '}'         // Closing JSON string
 #define SCORE_NEW_LINE    'n'         // Add a newline
-#define SCORE_PRIME       '#'         // Prime a reply to the client
 #define SCORE_SHOT        'S'         // Include shot number
 #define SCORE_SEQ         'Q'         // Include the journal sequence number (unique per shot, never reset)
 #define SCORE_SESSION_NO  'N'         // Include the journal session number
@@ -127,18 +126,13 @@
 #define SCORE_HARDWARE    'H'         // Include hardware values
 #define SCORE_TARGET      'O'         // Include target name
 #define SCORE_EVENT       'E'         // Include the athelte name
-#define SCORE_TEST        '$'         // Test the client with a test shot
 
 #define SCORE_ALL        "{SQ?TUXPHOE}" // shot / miss / target / time / x-y / radius-angle / North-East-South-West / target type
 #define SCORE_USB        "{SQ?TUX}"   // USB score elements
 #define SCORE_TCPIP      "{SQ?TUXE}"  // TCP score elements
 #define SCORE_BLUETOOTH  "{SQ?TUX}"   // Bluetooth score elements
-#define SCORE_HTTP       "{SQ?TUXPOE}" // HTTP score elements
-#define SCORE_HTTP_PRIME "{#}"        // HTTP Prime the client
-#define SCORE_HTTP_TEST  "{$}"        // HTTP Test the client
 #define SCORE_SEND_MISS  "{SQMTUX}"   // Send a miss
 
-#define HTTP_CLOSE_TIME 15l           // Time to close the HTTP connection after the last shot
 
 #define MAX_WAIT_TIME 10              // Wait up to 10 ms for the input to arrive
 #define MAX_RING_TIME 50              // Wait 50 ms for the ringing to stop
@@ -214,7 +208,6 @@ EXTERN volatile unsigned int run_state;                             // IPC state
 EXTERN time_count_t          LED_timer;                             // Turn off the LEDs when not in use
 EXTERN time_count_t          keep_alive;                            // Keep alive timer
 EXTERN time_count_t          power_save;                            // Power save timer
-EXTERN time_count_t          time_since_last_shot;                  // 15 minutes since last shot
 EXTERN time_count_t          session_time[];                        // Time in each session
 EXTERN time_count_t          shot_timer;                            // Wait for the sound to hit all sensors
 EXTERN time_count_t          ring_timer;                            // Let the ring on the backstop end

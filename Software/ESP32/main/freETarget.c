@@ -169,7 +169,6 @@ void freeETarget_init(void)
    */
   ft_timer_new(&keep_alive, (time_count_t)json_keep_alive * ONE_SECOND, send_keep_alive, "keep alive");                 // Keep alive timer
   ft_timer_new(&power_save, (time_count_t)(json_power_save) * (time_count_t)ONE_SECOND * 60L, &bye_tick, "power save"); // Power save timer
-  ft_timer_new(&time_since_last_shot, HTTP_CLOSE_TIME * 60 * ONE_SECOND, NULL, "time since last shot"); // 15 minutes since last shot
   ft_timer_new(&time_to_go, 0, NULL, "time to go");                                                     // Time remaining in session
   ft_timer_new(&shot_timer, 0, NULL, "shot timer");                                                     // Wait for the shot to arrive
   ft_timer_new(&ring_timer, 0, NULL, "ring timer");                                                     // Wait for the ringing to stop
@@ -268,7 +267,6 @@ void freeETarget_target_loop(void *arg)
       case START:                                                                              // Start of the loop
         DLT(DLT_APPLICATION, SEND(CONSOLE, sprintf(_xs, "state: START");))
         power_save           = (time_count_t)json_power_save * (time_count_t)ONE_SECOND * 60L; //  Reset the timer
-        time_since_last_shot = HTTP_CLOSE_TIME * 60l * ONE_SECOND;                             // 15 minutes since last shot
         set_mode(); // Set the mode for the next string of shot (ex Tabata or Rapid Fire)
         arm();      // Arm the circuit and check for errors
         set_status_LED(LED_READY);

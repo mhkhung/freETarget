@@ -8,9 +8,10 @@
  *
  * Endpoint:  ws://<target>:8080/ws   (the control web server)
  *
- * Not on port 80: that server is held up for as long as the main
- * page waits for a shot in /events.  A test page is at
- * http://<target>:8080/live
+ * Not on port 80, so that a /json request there (which waits for
+ * its command to finish) never holds up the shots.  The main page
+ * (FreeETarget.html) and the test page http://<target>:8080/live
+ * both use this API.
  *
  * Every message is one text frame.
  *
@@ -30,8 +31,9 @@
  * Target to client
  *
  *   {"hello":"freETarget", ...}   Sent once on connection.  Carries
- *                  the firmware version, target name, current session
- *                  and the seq the next entry will get ("next_seq").  If
+ *                  the firmware version, target name, current session,
+ *                  the seq the next entry will get ("next_seq"), and the
+ *                  current target type and athlete.  If
  *                  next_seq is not greater than the last seq a client
  *                  saw, the journal was erased: start over with
  *                  {"AFTER":0}.
@@ -44,7 +46,9 @@
  *   {"shot":3, "session":5, "seq":44, ...}
  *                  A shot, in journal order.  "seq" is unique and never
  *                  reused; remember the last one seen and send it with
- *                  {"AFTER":n} after reconnecting.
+ *                  {"AFTER":n} after reconnecting.  "target", "athelete",
+ *                  "event" and "target_name" are the target's current
+ *                  settings, as in the TCP score messages.
  *
  *   {"caught_up": 44}
  *                  The replay requested by {"AFTER":n} is complete; what
