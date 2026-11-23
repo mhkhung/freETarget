@@ -57,7 +57,6 @@ static const my_user_ctx_t event_menu_ctx  = {EVENT_HTTP_PORT};
  * Local functions
  */
 static esp_err_t stop_webserver(httpd_handle_t server);
-static esp_err_t service_get_FreeETarget(httpd_req_t *req);                            // Main target page
 static esp_err_t service_get_help(httpd_req_t *req);                                   // User help page
 static esp_err_t service_get_menu(httpd_req_t *req);                                   // Control back channel
 static esp_err_t service_get_who(httpd_req_t *req);                                    // Target information page
@@ -76,7 +75,6 @@ static void      http_printf(const char *format, httpd_req_t *req, unsigned int 
 
 const my_uri_t uri_list[] = {
     {DEFAULT_HTTP_PORT, "Display target",      URI("/", service_get_app, NULL)                             }, // Main target page
-    {DEFAULT_HTTP_PORT, "Classic target page", URI("/classic", service_get_FreeETarget, NULL)              },
 
     {DEFAULT_HTTP_PORT, "Help menu",           URI("/help", service_get_help, NULL)                        },
     {DEFAULT_HTTP_PORT, "Target info",         URI("/who", service_get_who, NULL)                          },
@@ -163,39 +161,6 @@ static esp_err_t service_get_live(httpd_req_t *req)
 {
   httpd_resp_set_type(req, "text/html");
   return httpd_resp_send(req, (const char *)live_html_start, SIZEOF_live_HTML);
-}
-
-/*----------------------------------------------------------------
- *
- * @function: service_get_FreeETarget
- *
- * @brief:    Basic service to return the FreeETarget page
- *
- * @return:   esp_err_t, error type
- *
- *---------------------------------------------------------------
- *
- * This function is called in response to a user starting a
- * shooting session.
- *
- *------------------------------------------------------------*/
-static esp_err_t service_get_FreeETarget(httpd_req_t *req)
-{
-  const char *resp_str;            // Reply to server
-  char        my_name[SHORT_TEXT]; // Temporary string
-
-  DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "service_get_FreeETarget(%s)", req->uri);))
-
-  /*
-   *  Send the reply to the client
-   */
-  target_name(my_name);                             // Get the target name
-  resp_str = (const char *)&FreeETarget_html_start; // point to the target HTML file
-  DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "reply(%s)", my_name);))
-  httpd_resp_set_hdr(req, "get_FreeETarget", my_name);
-  httpd_resp_send(req, resp_str, SIZEOF_FreeETarget_HTML);
-
-  return ESP_OK;
 }
 
 /*----------------------------------------------------------------

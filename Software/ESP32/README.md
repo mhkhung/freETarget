@@ -122,8 +122,7 @@ laptops, with no internet needed:
 - Spoken scores (Sound), CSV export, a printable page, and **History** to open
   any session still in the journal.
 
-The previous page is at `/classic`. Match length and times are kept by each
-browser, not by the target.
+Match length and times are kept by each browser, not by the target.
 
 ## WebSocket API
 

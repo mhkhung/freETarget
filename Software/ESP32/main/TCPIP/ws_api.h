@@ -9,8 +9,8 @@
  * Endpoint:  ws://<target>:8080/ws   (the control web server)
  *
  * Not on port 80, so that a /json request there (which waits for
- * its command to finish) never holds up the shots.  The main page
- * (FreeETarget.html) and the test page http://<target>:8080/live
+ * its command to finish) never holds up the shots.  The athlete page
+ * (app.html, served at /) and the test page http://<target>:8080/live
  * both use this API.
  *
  * Every message is one text frame.

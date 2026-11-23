@@ -3,7 +3,6 @@
   app.html: the freETarget athlete page, served at http://<target>/
   Talks to the target over the WebSocket API (TCPIP/ws_api.h), on port 8080.
   Self contained: the target may be its own Wi-Fi network with no internet.
-  The previous page is at /classic.
 -->
 <html lang="en">
 <head>
@@ -96,7 +95,6 @@ dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top
   <span class="brand">freETarget</span>
   <span class="tname" id="tname"></span>
   <button id="historyBtn" title="Past sessions (H)">History</button>
-  <a href="/classic" class="muted" style="font-size:13px">Classic page</a>
   <span id="link" class="down">connecting</span>
 </header>
 <main>
