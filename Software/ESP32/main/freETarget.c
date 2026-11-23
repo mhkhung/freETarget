@@ -558,9 +558,18 @@ unsigned int reduce(void)
       {
         DLT(DLT_INFO, show_sensor_status(record[shot_out].sensor_status);)
         set_status_LED(LED_MISS);
-        if ( json_send_miss != 0 )
+        if ( json_send_miss != 0 )                                 // Report the miss
         {
-          prepare_score(&record[shot_out], shot_out, MISSED_SHOT); // Show a miss
+          prepare_score(&record[shot_out], shot_out, MISSED_SHOT); // Takes the token ring if one is used
+          record[shot_out].miss   = 1;                             // There is no valid location
+          record[shot_out].x_mm   = 1000;                          // Way off the target, like a timed fire miss
+          record[shot_out].y_mm   = 1000;
+          record[shot_out].radius = sqrt(2.0) * 1000;
+          record[shot_out].angle  = degrees_to_radians(45);
+          shot_journal_record(&record[shot_out]);                  // Save it, sets the shot number and seq
+          timed_fire_scored();                                     // A reported miss is not counted again at the end of a string
+          build_json_score(&record[shot_out], SCORE_SEND_MISS, score, sizeof(score));
+          serial_to_all(score, ALL_SCORES);
         }
       }
     }
