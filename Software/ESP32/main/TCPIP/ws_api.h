@@ -25,6 +25,17 @@
  *                  Must be sent on its own.  Sending it again starts
  *                  over from the new position.
  *
+ *   {"SESSIONS": n}  List the newest n sessions in the journal (0 = up
+ *                  to 50).  Answered with {"sessions":[...]}.
+ *
+ *   {"HISTORY": s} Replay session s from the journal.  Every message of
+ *                  the replay carries "history": s, and it ends with
+ *                  {"history_done": s}.  Live shots keep coming in
+ *                  between.
+ *
+ *                  AFTER, SESSIONS and HISTORY are answered to this
+ *                  client only and may be combined in one frame.
+ *
  *   anything else  A JSON command, exactly as over USB or TCP, for
  *                  example {"TIME": 1795000000} or {"ECHO":0}.
  *
@@ -33,15 +44,25 @@
  *   {"hello":"freETarget", ...}   Sent once on connection.  Carries
  *                  the firmware version, target name, current session,
  *                  the seq the next entry will get ("next_seq"), and the
- *                  current target type and athlete.  If
+ *                  current target type, session type, athlete, event and
+ *                  target name.  If
  *                  next_seq is not greater than the last seq a client
  *                  saw, the journal was erased: start over with
  *                  {"AFTER":0}.
  *
- *   {"session":5, "session_type":1, "seq":40, "change":"new"}
+ *   {"session":5, "session_type":2, "seq":40, "change":"new",
+ *    "target":110, "utc":1795000000}
  *                  A session started ("new") or switched between
- *                  sighters and match ("mode").  Shots that follow
- *                  belong to it.
+ *                  sighters (2) and match (4) ("mode"); 0 is practice.
+ *                  "target" is the target type when it happened
+ *                  (100 air pistol, 110 air rifle, 500 50 m pistol,
+ *                  510 50 m rifle, +1 for practice; 0 unknown) and "utc"
+ *                  its time (0 unknown).  Shots that follow belong to it.
+ *
+ *   {"sessions":[{"session":5, "first_seq":40, "last_seq":75,
+ *    "shots":30, "sighters":5, "target":110, "session_type":4,
+ *    "first_utc":..., "last_utc":...}, ...]}
+ *                  Answer to {"SESSIONS":n}, oldest first.
  *
  *   {"shot":3, "session":5, "seq":44, ...}
  *                  A shot, in journal order.  "seq" is unique and never

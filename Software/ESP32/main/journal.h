@@ -127,6 +127,10 @@ typedef struct __attribute__((packed))
       uint32_t boot_seq;   // seq of the first entry written since power up
       uint32_t uptime;     // Seconds since power up when the clock was set to "time"
     } clock;
+    struct                 // JRNL_SESSION, JRNL_MODE
+    {
+      uint16_t target;     // Target type code (100 air pistol, 110 air rifle, ... see http_target_type()), 0 = unknown
+    } info;
   };
   uint32_t time;           // Wall clock time stamp, see above
   uint32_t crc;            // CRC32 of the preceding 60 bytes
@@ -174,6 +178,7 @@ typedef struct
   uint32_t     session_start_seq;  // seq of the first entry of the current session
   uint16_t     session_shots;      // Shots recorded in the current session
   uint8_t      session_type;       // Session type from the latest entry
+  uint16_t     target;             // Target type of the current session (written into JRNL_SESSION / JRNL_MODE)
   uint32_t     entries;            // Valid entries found by journal_open()
   uint32_t     bad_entries;        // Entries that failed the CRC in journal_open()
   jrnl_now_t   now;                // Time stamps entries, NULL = JRNL_TIME_UNKNOWN
@@ -203,6 +208,7 @@ int  journal_open(journal_t *j, const jrnl_flash_t *flash);       // Scan the st
 int  journal_append_shot(journal_t *j, jrnl_entry_t *entry);      // Append a shot, fills in seq / session / shot
 int  journal_new_session(journal_t *j, uint8_t session_type);     // Start a new session
 int  journal_set_mode(journal_t *j, uint8_t session_type);        // Record a session type change
+void journal_set_target(journal_t *j, uint16_t target);           // Target type for the session and mode entries that follow
 void journal_set_time_source(journal_t *j, jrnl_now_t now, void *ctx); // Call after journal_open()
 int  journal_clock_set(journal_t *j, uint32_t unix_time, uint32_t uptime, uint8_t source); // The clock was set
 uint32_t journal_entry_time(const journal_t *j, const jrnl_entry_t *entry, uint8_t *source); // Unix time of an entry, or JRNL_TIME_UNKNOWN

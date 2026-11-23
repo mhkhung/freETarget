@@ -40,8 +40,26 @@ typedef struct
   unsigned int  seq;
   unsigned int  session;
   unsigned int  session_type;   // SESSION_xxx (without SESSION_VALID)
+  unsigned int  target;         // JRNL_SESSION / JRNL_MODE: target type code (0 = unknown)
+  unsigned int  utc;            // Unix time of the entry (0 = unknown)
   shot_record_t shot;           // JRNL_SHOT only
 } shot_journal_event_t;
+
+/*
+ * One session, as listed by shot_journal_sessions()
+ */
+typedef struct
+{
+  unsigned int session;         // Session number
+  unsigned int first_seq;       // seq of its first and last entries
+  unsigned int last_seq;
+  unsigned int shots;           // Shots (including misses)
+  unsigned int sighters;        // of which sighters
+  unsigned int target;          // Target type code (0 = unknown)
+  unsigned int session_type;    // Latest SESSION_xxx (without SESSION_VALID)
+  unsigned int first_utc;       // Unix time of the first and last entries (0 = unknown)
+  unsigned int last_utc;
+} shot_journal_summary_t;
 
 void shot_journal_init(void);                                       // Open the journal, call once at start up
 bool shot_journal_resume(void);                                     // true if a session was recovered from flash
@@ -55,8 +73,10 @@ int  shot_journal_replay_session(shot_journal_cb_t f, void *ctx);   // Replay th
 void shot_journal_show(void);                                       // Print the journal status (ECHO)
 void shot_journal_set_notify(shot_journal_notify_t f);              // Install the new entry callback
 void shot_journal_cursor_start(shot_journal_cursor_t *c, unsigned int after_seq); // after_seq 0 = start of the current session
+void shot_journal_cursor_start_all(shot_journal_cursor_t *c);       // From the oldest entry still in the journal
 bool shot_journal_cursor_next(shot_journal_cursor_t *c, shot_journal_event_t *ev); // false when caught up (call again later)
 unsigned int shot_journal_session(void);                            // Current session number (0 = none)
 unsigned int shot_journal_next_seq(void);                           // seq the next entry will get
+int  shot_journal_sessions(shot_journal_summary_t *list, int max);  // The newest max sessions, oldest first; returns the count
 
 #endif

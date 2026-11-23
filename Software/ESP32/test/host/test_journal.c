@@ -881,6 +881,56 @@ static void test_follow_overrun(void)
   sim_free(f);
 }
 
+static void test_target(void)
+{
+  sim_flash_t *f = sim_new(4);
+  journal_t    j;
+  jrnl_iter_t  it;
+  jrnl_entry_t e;
+  int          n;
+
+  printf("target type of a session\n");
+  reboot(&j, f);
+  CHECK(j.target == 0);
+  journal_set_target(&j, 110);
+  CHECK(journal_new_session(&j, 2) == JRNL_OK);
+  e = make_shot(1);
+  CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+  journal_set_target(&j, 111);
+  CHECK(journal_set_mode(&j, 4) == JRNL_OK);
+  e = make_shot(2);
+  CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+
+  journal_iter_after(&j, &it, 0);
+  for ( n = 0; journal_next(&j, &it, &e); )
+  {
+    if ( e.kind == JRNL_SESSION )
+    {
+      CHECK(e.info.target == 110);
+      n++;
+    }
+    if ( e.kind == JRNL_MODE )
+    {
+      CHECK(e.info.target == 111);
+      n++;
+    }
+  }
+  CHECK(n == 2);
+
+  reboot(&j, f);
+  CHECK(j.target == 111);                               // From the newest session or mode entry
+
+  journal_set_target(&j, 500);                          // The next session has its own
+  CHECK(journal_new_session(&j, 0) == JRNL_OK);
+  reboot(&j, f);
+  CHECK(j.target == 500);
+  e = make_shot(3);                                     // Shots do not change it
+  CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+  reboot(&j, f);
+  CHECK(j.target == 500);
+  sim_free(f);
+}
+
 int main(void)
 {
   test_crc();
@@ -900,6 +950,7 @@ int main(void)
   test_many_power_ups();
   test_follow();
   test_follow_overrun();
+  test_target();
 
   printf("\n%d checks, %d failures\n", checks, failures);
   return failures == 0 ? 0 : 1;

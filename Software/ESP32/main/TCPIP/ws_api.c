@@ -49,6 +49,7 @@
 #define WS_STACK        (6 * 1024)
 #define WS_PRIORITY     4              // Same as the TCP polling tasks
 #define WS_SHOT_FIELDS  "SNQM?TUXPOE"  // Shot, session, seq, miss, session type, time, utc, x/y, polar, target type, names
+#define WS_MAX_SESSIONS 50             // Sessions listed by {"SESSIONS":n}
 
 /*
  * Shared between the web server task and the sender (client_lock)
@@ -61,6 +62,10 @@ typedef struct
   bool         hello_pending;          // Send the hello message
   bool         after_pending;          // {"AFTER":n} received
   unsigned int after;                  // n
+  bool         sessions_pending;       // {"SESSIONS":n} received
+  unsigned int sessions;               // n
+  bool         history_pending;        // {"HISTORY":s} received
+  unsigned int history;                // s
 } ws_client_t;
 
 /*
@@ -73,6 +78,9 @@ typedef struct
   bool                  caught_up;     // {"caught_up"} has been sent
   unsigned int          last_seq;      // Last entry sent
   shot_journal_cursor_t cursor;
+  bool                  hist_active;   // Replaying a past session
+  unsigned int          hist_session;  // which one
+  shot_journal_cursor_t hist_cursor;
 } ws_stream_t;
 
 static httpd_handle_t    ws_server;
@@ -166,6 +174,32 @@ void ws_api_closed(int fd)
   }
 }
 
+/*
+ * Find "key": number in a frame.  Returns true and sets *value (0 if
+ * negative) if the key is present.
+ */
+static bool ws_number(const char *text, const char *key, long *value)
+{
+  const char *p = strstr(text, key);
+
+  if ( p == NULL )
+  {
+    return false;
+  }
+
+  p += strlen(key);
+  while ( (*p == ' ') || (*p == ':') )
+  {
+    p++;
+  }
+  *value = strtol(p, NULL, 10);
+  if ( *value < 0 )
+  {
+    *value = 0;
+  }
+  return true;
+}
+
 /*----------------------------------------------------------------
  *
  * @function: ws_handler
@@ -177,10 +211,11 @@ static esp_err_t ws_handler(httpd_req_t *req)
 {
   httpd_ws_frame_t frame;
   char             text[WS_MAX_COMMAND + 1];
-  const char      *after;
   int              fd = httpd_req_to_sockfd(req);
   int              i;
-  long             n;
+  long             n        = -1;
+  long             sessions = -1;
+  long             history  = -1;
 
   if ( req->method == HTTP_GET )                       // Handshake done, a new client
   {
@@ -212,23 +247,28 @@ static esp_err_t ws_handler(httpd_req_t *req)
     return ESP_OK;                                       // Ignore binary frames
   }
 
-  after = strstr(text, "\"AFTER\"");
-  if ( after != NULL )                                   // {"AFTER": n}
+  if ( ws_number(text, "\"AFTER\"", &n) | ws_number(text, "\"SESSIONS\"", &sessions) | ws_number(text, "\"HISTORY\"", &history) )
   {
-    after += strlen("\"AFTER\"");
-    while ( (*after == ' ') || (*after == ':') )
-    {
-      after++;
-    }
-    n = strtol(after, NULL, 10);
-
     xSemaphoreTake(client_lock, portMAX_DELAY);
     for ( i = 0; i != WS_MAX_CLIENTS; i++ )
     {
       if ( clients[i].used && (clients[i].fd == fd) )
       {
-        clients[i].after         = (n > 0) ? (unsigned int)n : 0;
-        clients[i].after_pending = true;
+        if ( n >= 0 )                                    // {"AFTER": n}
+        {
+          clients[i].after         = (unsigned int)n;
+          clients[i].after_pending = true;
+        }
+        if ( sessions >= 0 )                             // {"SESSIONS": n}
+        {
+          clients[i].sessions         = (unsigned int)sessions;
+          clients[i].sessions_pending = true;
+        }
+        if ( history > 0 )                               // {"HISTORY": s}
+        {
+          clients[i].history         = (unsigned int)history;
+          clients[i].history_pending = true;
+        }
       }
     }
     xSemaphoreGive(client_lock);
@@ -309,40 +349,97 @@ static void drop(int fd, unsigned int gen)
 
 static bool send_hello(int fd)
 {
-  char     text[SHORT_TEXT * 4];
+  char     text[SHORT_TEXT * 6];
   char     name[SHORT_TEXT];
   uint8_t  source;
   uint32_t now = wall_clock_now(&source);
 
   target_name(name);
   snprintf(text, sizeof(text), "{\"hello\":\"freETarget\", \"version\":%s, \"name\":\"%.60s\", \"session\":%u, \"next_seq\":%u, "
-                               "\"utc\":%lu, \"clock\":\"%s\", \"target\":%d, \"athelete\":\"%.60s\"}",
+                               "\"utc\":%lu, \"clock\":\"%s\", \"target\":%d, \"athelete\":\"%.60s\", \"event\":\"%.60s\", "
+                               "\"target_name\":\"%.60s\", \"session_type\":%d}",
            SOFTWARE_VERSION, name, shot_journal_session(), shot_journal_next_seq(),
            (source == JRNL_SOURCE_NONE) ? 0ul : (unsigned long)now, wall_clock_source_name(source), http_target_type(),
-           json_athlete);
+           json_athlete, json_event, json_target_name, shot_journal_session_type());
   return send_text(fd, text, strlen(text));
 }
 
-static bool send_event(int fd, const shot_journal_event_t *ev)
+static bool send_event(int fd, const shot_journal_event_t *ev, unsigned int history) // history 0 = live
 {
   char   text[SCORE_TEXT];
-  size_t used;
+  size_t used = 0;
 
-  if ( ev->kind == JRNL_SHOT )
+  text[0] = 0;
+  if ( history != 0 )                                    // Replayed from a past session
   {
-    text[0] = '{';
-    build_json_score((shot_record_t *)&ev->shot, WS_SHOT_FIELDS, text + 1, sizeof(text) - 2);
-    used = strlen(text);
-    text[used]     = '}';
-    text[used + 1] = 0;
+    used = snprintf(text, sizeof(text), "{\"history\":%u, ", history);
   }
   else
   {
-    snprintf(text, sizeof(text), "{\"session\":%u, \"session_type\":%u, \"seq\":%u, \"change\":\"%s\"}", ev->session,
-             ev->session_type, ev->seq, (ev->kind == JRNL_SESSION) ? "new" : "mode");
+    text[0] = '{';
+    used    = 1;
   }
 
+  if ( ev->kind == JRNL_SHOT )
+  {
+    build_json_score((shot_record_t *)&ev->shot, WS_SHOT_FIELDS, text + used, sizeof(text) - used - 2);
+  }
+  else
+  {
+    snprintf(text + used, sizeof(text) - used - 2, "\"session\":%u, \"session_type\":%u, \"seq\":%u, \"change\":\"%s\", "
+             "\"target\":%u, \"utc\":%u", ev->session, ev->session_type, ev->seq, (ev->kind == JRNL_SESSION) ? "new" : "mode",
+             ev->target, ev->utc);
+  }
+  used           = strlen(text);
+  text[used]     = '}';
+  text[used + 1] = 0;
+
   return send_text(fd, text, strlen(text));
+}
+
+/*
+ * {"sessions":[{...}, ...]} for {"SESSIONS":n}
+ */
+static bool send_sessions(int fd, unsigned int max)
+{
+  shot_journal_summary_t *list;
+  char                   *text;
+  size_t                  size;
+  size_t                  used;
+  int                     count;
+  bool                    ok;
+
+  if ( (max == 0) || (max > WS_MAX_SESSIONS) )
+  {
+    max = WS_MAX_SESSIONS;
+  }
+
+  list = malloc(sizeof(*list) * max);
+  size = 32 + max * 200;
+  text = malloc(size);
+  if ( (list == NULL) || (text == NULL) )
+  {
+    free(list);
+    free(text);
+    return true;                                         // Not the client's fault, keep it
+  }
+
+  count = shot_journal_sessions(list, (int)max);
+  used  = snprintf(text, size, "{\"sessions\":[");
+  for ( int i = 0; i != count; i++ )
+  {
+    used += snprintf(text + used, size - used,
+                     "%s{\"session\":%u, \"first_seq\":%u, \"last_seq\":%u, \"shots\":%u, \"sighters\":%u, \"target\":%u, "
+                     "\"session_type\":%u, \"first_utc\":%u, \"last_utc\":%u}",
+                     (i == 0) ? "" : ", ", list[i].session, list[i].first_seq, list[i].last_seq, list[i].shots, list[i].sighters,
+                     list[i].target, list[i].session_type, list[i].first_utc, list[i].last_utc);
+  }
+  snprintf(text + used, size - used, "]}");
+
+  ok = send_text(fd, text, strlen(text));
+  free(list);
+  free(text);
+  return ok;
 }
 
 /*
@@ -407,6 +504,8 @@ static void send_console(void)
   }
 }
 
+static bool serve_requests(int slot, const ws_client_t *c);
+
 /*
  * Serve one client.  Returns true if it has more to send.
  */
@@ -417,11 +516,14 @@ static bool serve(int slot)
   shot_journal_event_t ev;
   char                 text[SHORT_TEXT];
   int                  n;
+  bool                 more;
 
   xSemaphoreTake(client_lock, portMAX_DELAY);
-  c                            = clients[slot];
-  clients[slot].hello_pending  = false;
-  clients[slot].after_pending  = false;
+  c                               = clients[slot];
+  clients[slot].hello_pending     = false;
+  clients[slot].after_pending     = false;
+  clients[slot].sessions_pending  = false;
+  clients[slot].history_pending   = false;
   xSemaphoreGive(client_lock);
 
   if ( !c.used )
@@ -450,9 +552,18 @@ static bool serve(int slot)
     s->last_seq   = c.after;
   }
 
-  if ( !s->subscribed )
+  more = serve_requests(slot, &c);
+  xSemaphoreTake(client_lock, portMAX_DELAY);
+  c.used = clients[slot].used && (clients[slot].gen == c.gen);
+  xSemaphoreGive(client_lock);
+  if ( !c.used )                                         // Dropped while answering
   {
     return false;
+  }
+
+  if ( !s->subscribed )
+  {
+    return more;
   }
 
   for ( n = 0; n != WS_BATCH; n++ )
@@ -469,10 +580,10 @@ static bool serve(int slot)
         }
         s->caught_up = true;
       }
-      return false;
+      return more;
     }
 
-    if ( !send_event(c.fd, &ev) )
+    if ( !send_event(c.fd, &ev, 0) )
     {
       drop(c.fd, c.gen);
       return false;
@@ -481,6 +592,68 @@ static bool serve(int slot)
   }
 
   return true;                                           // Batch full, come back after the others
+}
+
+/*
+ * Requests that are answered once: the session list and a past
+ * session.  Returns true if there is more to send.
+ */
+static bool serve_requests(int slot, const ws_client_t *c)
+{
+  ws_stream_t         *s = &streams[slot];
+  shot_journal_event_t ev;
+  char                 text[SHORT_TEXT];
+  bool                 done = false;
+  int                  n;
+
+  if ( c->sessions_pending && !send_sessions(c->fd, c->sessions) )
+  {
+    drop(c->fd, c->gen);
+    return false;
+  }
+
+  if ( c->history_pending )                               // Start (or restart) a replay
+  {
+    shot_journal_cursor_start_all(&s->hist_cursor);      // From the oldest entry still in the journal
+    s->hist_active  = true;
+    s->hist_session = c->history;
+  }
+
+  if ( !s->hist_active )
+  {
+    return false;
+  }
+
+  for ( n = 0; n != WS_BATCH * 4; n++ )                   // Skipping older sessions is cheap
+  {
+    if ( !shot_journal_cursor_next(&s->hist_cursor, &ev) || (ev.session > s->hist_session) )
+    {
+      done = true;
+      break;
+    }
+    if ( ev.session < s->hist_session )
+    {
+      continue;
+    }
+    if ( !send_event(c->fd, &ev, s->hist_session) )
+    {
+      drop(c->fd, c->gen);
+      return false;
+    }
+  }
+
+  if ( !done )
+  {
+    return true;
+  }
+
+  snprintf(text, sizeof(text), "{\"history_done\":%u}", s->hist_session);
+  s->hist_active = false;
+  if ( !send_text(c->fd, text, strlen(text)) )
+  {
+    drop(c->fd, c->gen);
+  }
+  return false;
 }
 
 static void ws_sender(void *arg)

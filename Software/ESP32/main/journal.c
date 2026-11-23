@@ -171,6 +171,7 @@ int journal_open(journal_t *j, const jrnl_flash_t *flash)
   uint32_t     max_slot  = 0;
   uint16_t     max_shot  = 0;
   bool         any_shots = false;
+  uint32_t     target_seq = 0;
 
   if ( (j == NULL) || (flash == NULL) || (flash->read == NULL) || (flash->write == NULL) || (flash->erase == NULL) )
   {
@@ -244,7 +245,8 @@ int journal_open(journal_t *j, const jrnl_flash_t *flash)
   j->session_start_seq = entry.seq;
 
   /*
-   * Pass 2: count the shots belonging to the current session
+   * Pass 2: count the shots belonging to the current session, and find
+   * its target type (newest session or mode entry)
    */
   for ( slot = 0; slot != j->slots; slot++ )
   {
@@ -256,6 +258,12 @@ int journal_open(journal_t *j, const jrnl_flash_t *flash)
     if ( entry.seq < j->session_start_seq )
     {
       j->session_start_seq = entry.seq;
+    }
+
+    if ( ((entry.kind == JRNL_SESSION) || (entry.kind == JRNL_MODE)) && (entry.seq >= target_seq) )
+    {
+      target_seq = entry.seq;
+      j->target  = entry.info.target;
     }
 
     if ( entry.kind == JRNL_SHOT )
@@ -381,6 +389,7 @@ int journal_new_session(journal_t *j, uint8_t session_type)
   entry.kind         = JRNL_SESSION;
   entry.session      = j->session + 1;
   entry.session_type = session_type;
+  entry.info.target  = j->target;
 
   status = write_entry(j, &entry);
 
@@ -418,9 +427,23 @@ int journal_set_mode(journal_t *j, uint8_t session_type)
   entry.session      = j->session;
   entry.shot         = j->session_shots;
   entry.session_type = session_type;
+  entry.info.target  = j->target;
   j->session_type    = session_type;
 
   return write_entry(j, &entry);
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: journal_set_target
+ *
+ * @brief:    Set the target type recorded with the next session and
+ *            mode entries
+ *
+ *--------------------------------------------------------------*/
+void journal_set_target(journal_t *j, uint16_t target)
+{
+  j->target = target;
 }
 
 /*----------------------------------------------------------------

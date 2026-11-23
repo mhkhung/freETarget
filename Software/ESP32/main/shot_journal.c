@@ -31,6 +31,7 @@
 #include "serial_io.h"
 #include "shot_journal.h"
 #include "wall_clock.h"
+#include "helpers.h"
 
 #define PARTITION_LABEL "shots"         // Name of the partition in partitions.csv
 #define RAM_SECTORS     4               // Size of the fallback journal (256 entries)
@@ -311,6 +312,7 @@ void shot_journal_new_session(int session_type)
   }
 
   take();
+  journal_set_target(&journal, (uint16_t)http_target_type()); // Remember which target face this session uses
   status = journal_new_session(&journal, (uint8_t)session_type);
   give_and_notify();
 
@@ -330,6 +332,7 @@ void shot_journal_set_mode(int session_type)
   }
 
   take();
+  journal_set_target(&journal, (uint16_t)http_target_type());
   status = journal_set_mode(&journal, (uint8_t)session_type);
   give_and_notify();
 
@@ -467,6 +470,17 @@ void shot_journal_cursor_start(shot_journal_cursor_t *c, unsigned int after_seq)
   give();
 }
 
+void shot_journal_cursor_start_all(shot_journal_cursor_t *c)
+{
+  memset(c, 0, sizeof(*c));
+  if ( journal.is_open )
+  {
+    take();
+    journal_iter_after(&journal, &c->it, 0);
+    give();
+  }
+}
+
 bool shot_journal_cursor_next(shot_journal_cursor_t *c, shot_journal_event_t *ev)
 {
   jrnl_entry_t entry;
@@ -505,12 +519,117 @@ bool shot_journal_cursor_next(shot_journal_cursor_t *c, shot_journal_event_t *ev
   ev->seq          = entry.seq;
   ev->session      = entry.session;
   ev->session_type = entry.session_type & ~SESSION_VALID;
+  ev->target       = (entry.kind == JRNL_SHOT) ? 0 : entry.info.target;
+  ev->utc          = (time == JRNL_TIME_UNKNOWN) ? 0 : time;
   if ( entry.kind == JRNL_SHOT )
   {
     entry_to_shot(&entry, time, source, &ev->shot);
   }
 
   return true;
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: shot_journal_sessions
+ *
+ * @brief:    Summarise the sessions still in the journal
+ *
+ * @return:   Number of sessions in list (the newest max), oldest first
+ *
+ *----------------------------------------------------------------
+ *
+ * Reads the whole journal, one entry at a time, so a new shot is
+ * never held up for long.
+ *
+ *--------------------------------------------------------------*/
+int shot_journal_sessions(shot_journal_summary_t *list, int max)
+{
+  shot_journal_cursor_t   cursor;
+  shot_journal_event_t   *ev;
+  shot_journal_summary_t *s = NULL;
+  int                     count = 0;
+  int                     first = 0;                    // Ring index of the oldest summary kept
+
+  if ( !journal.is_open || (max <= 0) )
+  {
+    return 0;
+  }
+
+  ev = malloc(sizeof(*ev));
+  if ( ev == NULL )
+  {
+    return 0;
+  }
+
+  shot_journal_cursor_start_all(&cursor);             // Everything still in the journal
+
+  while ( shot_journal_cursor_next(&cursor, ev) )
+  {
+    if ( ev->session == 0 )
+    {
+      continue;
+    }
+
+    if ( (s == NULL) || (s->session != ev->session) )  // A new session
+    {
+      if ( count < max )
+      {
+        s = &list[(first + count) % max];
+        count++;
+      }
+      else
+      {
+        s     = &list[first];                           // Full, forget the oldest
+        first = (first + 1) % max;
+      }
+      memset(s, 0, sizeof(*s));
+      s->session   = ev->session;
+      s->first_seq = ev->seq;
+      s->first_utc = ev->utc;
+    }
+
+    s->last_seq     = ev->seq;
+    s->session_type = ev->session_type;
+    if ( ev->utc != 0 )
+    {
+      s->last_utc = ev->utc;
+      if ( s->first_utc == 0 )
+      {
+        s->first_utc = ev->utc;
+      }
+    }
+
+    if ( ev->kind == JRNL_SHOT )
+    {
+      s->shots++;
+      if ( ev->session_type == SESSION_SIGHT )
+      {
+        s->sighters++;
+      }
+    }
+    else if ( ev->target != 0 )
+    {
+      s->target = ev->target;
+    }
+  }
+  free(ev);
+
+  if ( first != 0 )                                     // Put them in order, oldest first
+  {
+    shot_journal_summary_t *ordered = malloc(sizeof(*ordered) * count);
+    if ( ordered != NULL )
+    {
+      for ( int i = 0; i != count; i++ )
+      {
+        ordered[i] = list[(first + i) % max];
+      }
+      memcpy(list, ordered, sizeof(*ordered) * count);
+      free(ordered);
+    }
+  }
+
+  return count;
 }
 
 /*----------------------------------------------------------------

@@ -114,6 +114,8 @@ protocol is described in [main/TCPIP/ws_api.h](main/TCPIP/ws_api.h). In short:
   arrive as `{"session": ..., "change": "new"}` or `"mode"`.
 - Any other message is an ordinary JSON command (`{"TIME": ...}`,
   `{"ECHO":0}`, ...). Command output comes back as plain text.
+- `{"SESSIONS": n}` lists the sessions in the journal and `{"HISTORY": s}`
+  replays one, tagged with `"history"`.
 
 The main page (`http://<target>/`) and `http://<target>:8080/live`, a small
 test page with a command line, both use this API. It is on port 8080 so that a
