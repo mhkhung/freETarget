@@ -90,6 +90,62 @@ static int read_slot(const journal_t *j, uint32_t slot, jrnl_entry_t *entry)
   return j->flash.read(j->flash.ctx, slot * JRNL_ENTRY_SIZE, entry, sizeof(*entry));
 }
 
+static uint8_t entry_source(const jrnl_entry_t *entry)
+{
+  return (uint8_t)((entry->flags & JRNL_SOURCE_MASK) >> JRNL_SOURCE_SHIFT);
+}
+
+static bool is_unix_time(uint32_t time)
+{
+  return (time >= JRNL_TIME_MIN) && (time != JRNL_TIME_UNKNOWN);
+}
+
+/*
+ * Remember a clock setting.  The newest JRNL_CLOCKS (by seq) are kept.
+ */
+static void remember_clock(journal_t *j, const jrnl_entry_t *entry)
+{
+  jrnl_clock_t clock;
+  uint32_t     i;
+  uint32_t     oldest = 0;
+
+  if ( !is_unix_time(entry->time) || (entry->clock.uptime >= JRNL_TIME_MIN) || (entry->clock.boot_seq > entry->seq) )
+  {
+    return;
+  }
+
+  clock.boot_seq = entry->clock.boot_seq;
+  clock.seq      = entry->seq;
+  clock.offset   = entry->time - entry->clock.uptime;
+  clock.source   = entry_source(entry);
+
+  if ( j->clock_count < JRNL_CLOCKS )
+  {
+    j->clocks[j->clock_count++] = clock;
+    return;
+  }
+
+  for ( i = 1; i != JRNL_CLOCKS; i++ )                                // Replace the oldest one if this is newer
+  {
+    if ( j->clocks[i].seq < j->clocks[oldest].seq )
+    {
+      oldest = i;
+    }
+  }
+  if ( clock.seq > j->clocks[oldest].seq )
+  {
+    j->clocks[oldest] = clock;
+  }
+}
+
+static void note_time(journal_t *j, const jrnl_entry_t *entry)       // Track the newest NTP time
+{
+  if ( (entry_source(entry) == JRNL_SOURCE_NTP) && is_unix_time(entry->time) && (entry->time > j->last_ntp_time) )
+  {
+    j->last_ntp_time = entry->time;
+  }
+}
+
 static uint32_t oldest_slot(const journal_t *j)                       // First slot of the sector after the head
 {
   uint32_t sector = (j->head / j->slots_per_sector) + 1;
@@ -157,6 +213,11 @@ int journal_open(journal_t *j, const jrnl_flash_t *flash)
     }
 
     j->entries++;
+    note_time(j, &entry);
+    if ( entry.kind == JRNL_CLOCK_SET )
+    {
+      remember_clock(j, &entry);
+    }
     if ( !found || (entry.seq > max_seq) )
     {
       found    = true;
@@ -167,7 +228,8 @@ int journal_open(journal_t *j, const jrnl_flash_t *flash)
 
   if ( !found )                                                       // Empty journal
   {
-    j->is_open = true;
+    j->boot_seq = j->next_seq;
+    j->is_open  = true;
     return JRNL_OK;
   }
 
@@ -207,6 +269,7 @@ int journal_open(journal_t *j, const jrnl_flash_t *flash)
   }
 
   j->session_shots = any_shots ? (uint16_t)(max_shot + 1) : 0;
+  j->boot_seq      = j->next_seq;
   j->is_open       = true;
 
   return JRNL_OK;
@@ -216,7 +279,7 @@ int journal_open(journal_t *j, const jrnl_flash_t *flash)
  *
  * @function: write_entry
  *
- * @brief:    Seal an entry with seq + CRC and write it at the head
+ * @brief:    Seal an entry with seq, time + CRC and write it at the head
  *
  * @return:   JRNL_OK, or an error code
  *
@@ -232,12 +295,23 @@ static int write_entry(journal_t *j, jrnl_entry_t *entry)
   jrnl_entry_t check;
   uint32_t     tries;
   uint32_t     slot;
+  uint8_t      source = JRNL_SOURCE_NONE;
 
-  entry->magic    = JRNL_MAGIC;
-  entry->version  = JRNL_VERSION;
-  entry->seq      = j->next_seq++;
-  entry->reserved = 0xFFFFFFFFu;
-  entry->crc      = journal_crc32(entry, CRC_LENGTH);
+  if ( entry->kind != JRNL_CLOCK_SET )                                // A clock entry carries its own time
+  {
+    entry->time = (j->now != NULL) ? j->now(j->now_ctx, &source) : JRNL_TIME_UNKNOWN;
+    if ( !is_unix_time(entry->time) )
+    {
+      source = JRNL_SOURCE_NONE;
+    }
+    entry->flags = (uint8_t)((entry->flags & ~JRNL_SOURCE_MASK) | ((source << JRNL_SOURCE_SHIFT) & JRNL_SOURCE_MASK));
+  }
+
+  entry->magic   = JRNL_MAGIC;
+  entry->version = JRNL_VERSION;
+  entry->seq     = j->next_seq++;
+  entry->crc     = journal_crc32(entry, CRC_LENGTH);
+  note_time(j, entry);
 
   for ( tries = 0; tries != j->slots; tries++ )
   {
@@ -387,6 +461,124 @@ int journal_append_shot(journal_t *j, jrnl_entry_t *entry)
   j->session_type = entry->session_type;
 
   return status;
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: journal_set_time_source
+ *
+ * @brief:    Install the function that time stamps new entries
+ *
+ *--------------------------------------------------------------*/
+void journal_set_time_source(journal_t *j, jrnl_now_t now, void *ctx)
+{
+  j->now     = now;
+  j->now_ctx = ctx;
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: journal_clock_set
+ *
+ * @brief:    Record that the wall clock was set
+ *
+ * @return:   JRNL_OK, or an error code
+ *
+ *----------------------------------------------------------------
+ *
+ * unix_time is the time the clock was set to, and uptime the seconds
+ * since power up at that moment.  Entries written since power up
+ * that were stamped with seconds since power up can then be given a
+ * Unix time by journal_entry_time().
+ *
+ *--------------------------------------------------------------*/
+int journal_clock_set(journal_t *j, uint32_t unix_time, uint32_t uptime, uint8_t source)
+{
+  jrnl_entry_t entry;
+  int          status;
+
+  if ( (j == NULL) || !j->is_open )
+  {
+    return JRNL_ERR_NOT_OPEN;
+  }
+
+  if ( !is_unix_time(unix_time) || (uptime >= JRNL_TIME_MIN) || (source == JRNL_SOURCE_NONE) || (source > JRNL_SOURCE_NTP) )
+  {
+    return JRNL_ERR_PARAM;
+  }
+
+  memset(&entry, 0, sizeof(entry));
+  entry.kind           = JRNL_CLOCK_SET;
+  entry.session        = j->session;
+  entry.shot           = j->session_shots;
+  entry.session_type   = j->session_type;
+  entry.flags          = (uint8_t)(source << JRNL_SOURCE_SHIFT);
+  entry.time           = unix_time;
+  entry.clock.boot_seq = j->boot_seq;
+  entry.clock.uptime   = uptime;
+
+  status = write_entry(j, &entry);
+  remember_clock(j, &entry);                                          // Use it even if the write failed
+
+  return status;
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: journal_entry_time
+ *
+ * @brief:    Work out the Unix time of an entry
+ *
+ * @return:   Unix time, or JRNL_TIME_UNKNOWN
+ *
+ *----------------------------------------------------------------
+ *
+ * *source is set to JRNL_SOURCE_xxx (it may be NULL).
+ *
+ *--------------------------------------------------------------*/
+uint32_t journal_entry_time(const journal_t *j, const jrnl_entry_t *entry, uint8_t *source)
+{
+  const jrnl_clock_t *best = NULL;
+  uint32_t            i;
+  uint8_t             dummy;
+
+  if ( source == NULL )
+  {
+    source = &dummy;
+  }
+  *source = JRNL_SOURCE_NONE;
+
+  if ( entry->time == JRNL_TIME_UNKNOWN )
+  {
+    return JRNL_TIME_UNKNOWN;
+  }
+
+  if ( is_unix_time(entry->time) )
+  {
+    *source = entry_source(entry);
+    return entry->time;
+  }
+
+  /*
+   * Seconds since power up.  Look for the clock setting made later
+   * in the same power up.
+   */
+  for ( i = 0; i != j->clock_count; i++ )
+  {
+    if ( (j->clocks[i].boot_seq <= entry->seq) && (entry->seq < j->clocks[i].seq)
+         && ((best == NULL) || (j->clocks[i].seq > best->seq)) )     // Use the newest, it is the most accurate
+    {
+      best = &j->clocks[i];
+    }
+  }
+
+  if ( best == NULL )
+  {
+    return JRNL_TIME_UNKNOWN;
+  }
+
+  *source = best->source;
+  return entry->time + best->offset;
 }
 
 /*----------------------------------------------------------------

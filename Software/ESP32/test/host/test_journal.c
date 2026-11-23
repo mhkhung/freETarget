@@ -540,6 +540,250 @@ static void test_garbage_flash(void)
   sim_free(f);
 }
 
+/*
+ * Simulated wall clock
+ */
+typedef struct
+{
+  uint32_t uptime;    // Seconds since power up
+  uint32_t offset;    // Unix time - uptime once the clock is set
+  uint8_t  source;    // JRNL_SOURCE_xxx
+} sim_clock_t;
+
+static uint32_t sim_now(void *ctx, uint8_t *source)
+{
+  sim_clock_t *c = (sim_clock_t *)ctx;
+
+  *source = c->source;
+  return (c->source == JRNL_SOURCE_NONE) ? c->uptime : c->uptime + c->offset;
+}
+
+static void power_up(journal_t *j, sim_flash_t *f, sim_clock_t *c) // Reboot with the clock not set
+{
+  reboot(j, f);
+  c->uptime = 0;
+  c->offset = 0;
+  c->source = JRNL_SOURCE_NONE;
+  journal_set_time_source(j, sim_now, c);
+}
+
+static void set_clock(journal_t *j, sim_clock_t *c, uint32_t unix_time, uint8_t source)
+{
+  c->offset = unix_time - c->uptime;
+  c->source = source;
+  CHECK(journal_clock_set(j, unix_time, c->uptime, source) == JRNL_OK);
+}
+
+static uint32_t shot_time_of(journal_t *j, uint32_t seq, uint8_t *source) // Look an entry up by seq
+{
+  jrnl_iter_t  it;
+  jrnl_entry_t e;
+
+  journal_iter_after(j, &it, seq - 1);
+  if ( !journal_next(j, &it, &e) || (e.seq != seq) )
+  {
+    CHECK(!"entry not found");
+    return 0;
+  }
+  return journal_entry_time(j, &e, source);
+}
+
+static void test_no_clock(void)
+{
+  sim_flash_t *f = sim_new(4);
+  journal_t    j;
+  jrnl_entry_t e = make_shot(1);
+  uint8_t      source;
+
+  printf("no clock\n");
+  reboot(&j, f);                                        // No time source installed
+  CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+  CHECK(e.time == JRNL_TIME_UNKNOWN);
+  CHECK(journal_entry_time(&j, &e, &source) == JRNL_TIME_UNKNOWN);
+  CHECK(source == JRNL_SOURCE_NONE);
+  CHECK(journal_entry_time(&j, &e, NULL) == JRNL_TIME_UNKNOWN);
+
+  CHECK(journal_clock_set(&j, 999999999u, 1, JRNL_SOURCE_NTP) == JRNL_ERR_PARAM);  // Not a Unix time
+  CHECK(journal_clock_set(&j, JRNL_TIME_UNKNOWN, 1, JRNL_SOURCE_NTP) == JRNL_ERR_PARAM);
+  CHECK(journal_clock_set(&j, 1800000000u, JRNL_TIME_MIN, JRNL_SOURCE_NTP) == JRNL_ERR_PARAM); // Not an uptime
+  CHECK(journal_clock_set(&j, 1800000000u, 1, JRNL_SOURCE_NONE) == JRNL_ERR_PARAM);
+  CHECK(journal_clock_set(&j, 1800000000u, 1, 3) == JRNL_ERR_PARAM);
+  CHECK(j.clock_count == 0);
+  sim_free(f);
+}
+
+static void test_clock(void)
+{
+  sim_flash_t *f = sim_new(4);
+  journal_t    j;
+  sim_clock_t  c;
+  jrnl_iter_t  it;
+  jrnl_entry_t e;
+  uint8_t      source;
+  uint32_t     a, b, d, n;
+  const uint32_t T = 1800000000u;
+
+  printf("clock set after the first shot\n");
+  power_up(&j, f, &c);
+
+  c.uptime = 10;                                        // Shot before the clock is set
+  e = make_shot(1);
+  CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+  a = e.seq;
+  CHECK(e.time == 10);
+  CHECK((e.flags & JRNL_SOURCE_MASK) == 0);
+  CHECK(journal_entry_time(&j, &e, &source) == JRNL_TIME_UNKNOWN);
+  CHECK(source == JRNL_SOURCE_NONE);
+
+  c.uptime = 20;                                        // NTP sets the clock
+  set_clock(&j, &c, T, JRNL_SOURCE_NTP);
+  CHECK(shot_time_of(&j, a, &source) == T - 10);        // The early shot now has a time
+  CHECK(source == JRNL_SOURCE_NTP);
+
+  c.uptime = 30;                                        // Shot after the clock is set
+  e = make_shot(2);
+  e.flags = JRNL_FLAG_MISS;
+  CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+  b = e.seq;
+  CHECK(e.time == T + 10);
+  CHECK((e.flags & JRNL_FLAG_MISS) != 0);               // The miss flag survives the stamp
+  CHECK(journal_entry_time(&j, &e, &source) == T + 10);
+  CHECK(source == JRNL_SOURCE_NTP);
+  CHECK(j.last_ntp_time == T + 10);
+
+  /*
+   * Power cycle.  The clock is lost but the journal still knows the
+   * times of the earlier shots.
+   */
+  power_up(&j, f, &c);
+  CHECK(j.clock_count == 1);
+  CHECK(j.last_ntp_time == T + 10);
+  CHECK(shot_time_of(&j, a, &source) == T - 10);
+  CHECK(source == JRNL_SOURCE_NTP);
+  CHECK(shot_time_of(&j, b, &source) == T + 10);
+
+  c.uptime = 5;                                         // A shot in the new power up, before any clock
+  e = make_shot(3);
+  CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+  d = e.seq;
+  CHECK(shot_time_of(&j, d, &source) == JRNL_TIME_UNKNOWN); // The old clock setting must not be used
+
+  c.uptime = 8;                                         // A client sets the clock
+  set_clock(&j, &c, T + 1000, JRNL_SOURCE_CLIENT);
+  CHECK(shot_time_of(&j, d, &source) == T + 997);
+  CHECK(source == JRNL_SOURCE_CLIENT);
+  CHECK(shot_time_of(&j, a, &source) == T - 10);        // Earlier power ups are unchanged
+  CHECK(source == JRNL_SOURCE_NTP);
+  CHECK(j.last_ntp_time == T + 10);                     // Client times do not count
+
+  c.uptime = 9;                                         // NTP corrects the client time later on
+  set_clock(&j, &c, T + 2000, JRNL_SOURCE_NTP);
+  CHECK(shot_time_of(&j, d, &source) == T + 1996);      // The newest setting wins
+  CHECK(source == JRNL_SOURCE_NTP);
+
+  journal_iter_session(&j, &it);                        // Clock entries are not shots
+  for ( n = 0; journal_next(&j, &it, &e); n++ )
+  {
+    CHECK(e.kind == JRNL_SHOT);
+  }
+  CHECK(n == 3);
+
+  power_up(&j, f, &c);                                  // Everything survives another power cycle
+  CHECK(shot_time_of(&j, a, NULL) == T - 10);
+  CHECK(shot_time_of(&j, b, NULL) == T + 10);
+  CHECK(shot_time_of(&j, d, &source) == T + 1996);
+  CHECK(source == JRNL_SOURCE_NTP);
+  CHECK(j.session_shots == 3);                          // Clock entries do not disturb the session
+  sim_free(f);
+}
+
+static void test_clock_before_session(void)
+{
+  sim_flash_t *f = sim_new(4);
+  journal_t    j;
+  sim_clock_t  c;
+  jrnl_entry_t e;
+  uint32_t     a;
+
+  printf("clock set in another power up\n");
+  power_up(&j, f, &c);
+  c.uptime = 4;                                         // Shot in a power up that never gets a clock
+  e = make_shot(1);
+  CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+  a = e.seq;
+
+  power_up(&j, f, &c);
+  c.uptime = 3;
+  set_clock(&j, &c, 1800000000u, JRNL_SOURCE_NTP);
+  CHECK(shot_time_of(&j, a, NULL) == JRNL_TIME_UNKNOWN); // A later power up's clock must not be used
+
+  c.source = JRNL_SOURCE_CLIENT;                        // A time source that claims a source for an uptime
+  c.offset = 0;
+  e = make_shot(2);
+  CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+  CHECK(e.time == 3);
+  CHECK((e.flags & JRNL_SOURCE_MASK) == 0);             // is not trusted
+  sim_free(f);
+
+  printf("clock set before the first shot\n");
+  f = sim_new(4);
+  power_up(&j, f, &c);
+  c.uptime = 3;
+  set_clock(&j, &c, 1800000000u, JRNL_SOURCE_NTP);      // Clock set before the first shot
+  power_up(&j, f, &c);
+  CHECK(j.session == 0);                                // No session to resume
+  CHECK(j.next_seq == 2);
+
+  e = make_shot(1);
+  CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+  CHECK(j.session == 1);
+  sim_free(f);
+}
+
+static void test_many_power_ups(void)
+{
+  sim_flash_t *f = sim_new(8);
+  journal_t    j;
+  sim_clock_t  c;
+  jrnl_entry_t e;
+  uint32_t     seq[JRNL_CLOCKS + 5];
+  uint32_t     boot;
+  const uint32_t boots = JRNL_CLOCKS + 5;
+
+  printf("many power ups\n");
+
+  for ( boot = 0; boot != boots; boot++ )
+  {
+    power_up(&j, f, &c);
+    c.uptime = 100;
+    e = make_shot((int)boot);
+    CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+    seq[boot] = e.seq;
+    c.uptime = 160;
+    set_clock(&j, &c, 1800000000u + boot * 86400u, (boot & 1) ? JRNL_SOURCE_CLIENT : JRNL_SOURCE_NTP);
+    CHECK(j.clock_count == ((boot < JRNL_CLOCKS) ? boot + 1 : JRNL_CLOCKS));
+  }
+
+  power_up(&j, f, &c);
+  CHECK(j.clock_count == JRNL_CLOCKS);
+  for ( boot = 0; boot != boots; boot++ )
+  {
+    uint8_t  source;
+    uint32_t t = shot_time_of(&j, seq[boot], &source);
+
+    if ( boot < boots - JRNL_CLOCKS )                   // Too old, the setting was forgotten
+    {
+      CHECK(t == JRNL_TIME_UNKNOWN);
+    }
+    else
+    {
+      CHECK(t == 1800000000u + boot * 86400u - 60u);
+      CHECK(source == ((boot & 1) ? JRNL_SOURCE_CLIENT : JRNL_SOURCE_NTP));
+    }
+  }
+  sim_free(f);
+}
+
 int main(void)
 {
   test_crc();
@@ -553,6 +797,10 @@ int main(void)
   test_append_during_iteration();
   test_power_cuts();
   test_garbage_flash();
+  test_no_clock();
+  test_clock();
+  test_clock_before_session();
+  test_many_power_ups();
 
   printf("\n%d checks, %d failures\n", checks, failures);
   return failures == 0 ? 0 : 1;

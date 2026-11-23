@@ -21,6 +21,7 @@
 #include "diag_tools.h"
 #include "json.h"
 #include "shot_journal.h"
+#include "wall_clock.h"
 #include "mechanical.h"
 #include "mfs.h"
 #include "nonvol.h"
@@ -110,6 +111,7 @@ const json_message_t JSON[] = {
     {SHOW + LOCK, "\"STEP_TIME\":",      &json_step_time,             IS_INT32,               0,                  NONVOL_STEP_TIME,           0,          0 },
     {HIDE,        "\"TARGET_TYPE\":",    &json_target_type,           IS_INT32,               0,                  NONVOL_TARGET_TYPE,         0,          0 },
     {HIDE + LOCK, "\"TEST\":",           0,                           IS_INT32,               &self_test,         0,                          0,          0 },
+    {HIDE,        "\"TIME\":",           0,                           IS_INT32,               &wall_clock_from_client, 0,                     0,          0 },
     {SHOW + LOCK, "\"TOKEN\":",          &json_token,                 IS_INT32,               0,                  NONVOL_TOKEN,               0,          0 },
     {SHOW,        "\"TRACE\":",          0,                           IS_INT32,               &set_trace,         0,                          0,          0 },
     {SHOW,        "\"VERSION\"",         0,                           IS_INT32,               &POST_version,      0,                          0,          0 },
@@ -597,6 +599,7 @@ void show_echo(void)
   esp_ota_get_partition_description(running_partition, &running_app_info);
   SEND(ALL, sprintf(_xs, "\"OTA BUILD\":        %s, ", running_app_info.version);)  // Current OTA identifier
   shot_journal_show();                                                              // Saved shots
+  wall_clock_show();                                                                // Time of day
   SEND(ALL, sprintf(_xs, "\"LOCKED\":            \"%s\"", no_yes[json_lock != 0]);) // The JSON is locked
 
 #if ( INCLUDE_OTA_ECHO )

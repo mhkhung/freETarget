@@ -30,6 +30,7 @@
 #include "journal.h"
 #include "serial_io.h"
 #include "shot_journal.h"
+#include "wall_clock.h"
 
 #define PARTITION_LABEL "shots"         // Name of the partition in partitions.csv
 #define RAM_SECTORS     4               // Size of the fallback journal (256 entries)
@@ -87,6 +88,12 @@ static int ram_erase(void *ctx, uint32_t offset, size_t length)
   return 0;
 }
 
+static uint32_t journal_now(void *ctx, uint8_t *source)
+{
+  (void)ctx;
+  return wall_clock_now(source);
+}
+
 static void take(void)
 {
   xSemaphoreTake(lock, portMAX_DELAY);
@@ -142,6 +149,7 @@ void shot_journal_init(void)
 
   take();
   status = journal_open(&journal, &driver);
+  journal_set_time_source(&journal, journal_now, NULL);
   give();
 
   if ( status != JRNL_OK )
@@ -196,26 +204,32 @@ int shot_journal_session_type(void)
  *
  *----------------------------------------------------------------
  *
- * Fills in shot->shot (the shot number within the session) and
- * shot->seq (the journal sequence number) so that the score sent to
- * the clients matches what was saved.
+ * Fills in shot->shot (the shot number within the session),
+ * shot->seq (the journal sequence number) and shot->utc / clock (the
+ * time of day, if known) so that the score sent to the clients
+ * matches what was saved.
  *
  *--------------------------------------------------------------*/
 void shot_journal_record(shot_record_t *shot)
 {
   jrnl_entry_t entry;
   int          status;
+  uint8_t      source;
+  uint32_t     time;
 
   if ( !journal.is_open )
   {
-    shot->shot = unjournaled_shots++;
-    shot->seq  = 0;
+    time        = wall_clock_now(&source);
+    shot->shot  = unjournaled_shots++;
+    shot->seq   = 0;
+    shot->utc   = (source == JRNL_SOURCE_NONE) ? 0 : time;
+    shot->clock = source;
     return;
   }
 
   memset(&entry, 0, sizeof(entry));
   entry.session_type = (uint8_t)shot->session_type;
-  entry.miss         = (uint8_t)(shot->miss != 0);
+  entry.flags        = (shot->miss != 0) ? JRNL_FLAG_MISS : 0;
   entry.shot_time    = (uint32_t)shot->shot_time;
   entry.x_mm         = (float)shot->x_mm;
   entry.y_mm         = (float)shot->y_mm;
@@ -230,10 +244,13 @@ void shot_journal_record(shot_record_t *shot)
 
   take();
   status = journal_append_shot(&journal, &entry);
+  time   = journal_entry_time(&journal, &entry, &source);
   give();
 
-  shot->shot = entry.shot;
-  shot->seq  = entry.seq;
+  shot->shot  = entry.shot;
+  shot->seq   = entry.seq;
+  shot->utc   = (time == JRNL_TIME_UNKNOWN) ? 0 : time;
+  shot->clock = source;
 
   if ( status != JRNL_OK )
   {
@@ -287,6 +304,37 @@ void shot_journal_set_mode(int session_type)
 
 /*----------------------------------------------------------------
  *
+ * @function: shot_journal_clock_set
+ *
+ * @brief:    Record that the wall clock was set (see wall_clock.c)
+ *
+ *--------------------------------------------------------------*/
+void shot_journal_clock_set(uint32_t unix_time, uint32_t uptime, int source)
+{
+  int status;
+
+  if ( !journal.is_open )
+  {
+    return;
+  }
+
+  take();
+  status = journal_clock_set(&journal, unix_time, uptime, (uint8_t)source);
+  give();
+
+  if ( status != JRNL_OK )
+  {
+    DLT(DLT_CRITICAL, SEND(CONSOLE, sprintf(_xs, "Clock setting could not be saved (%d)", status);))
+  }
+}
+
+uint32_t shot_journal_last_ntp_time(void)
+{
+  return journal.is_open ? journal.last_ntp_time : 0;
+}
+
+/*----------------------------------------------------------------
+ *
  * @function: shot_journal_replay_session
  *
  * @brief:    Call f() for every shot of the current session, oldest first
@@ -300,7 +348,9 @@ int shot_journal_replay_session(shot_journal_cb_t f, void *ctx)
   jrnl_entry_t  entry;
   shot_record_t shot;
   bool          more;
-  int           count = 0;
+  int           count  = 0;
+  uint32_t      time   = JRNL_TIME_UNKNOWN;
+  uint8_t       source = JRNL_SOURCE_NONE;
 
   if ( !journal.is_open )
   {
@@ -315,6 +365,10 @@ int shot_journal_replay_session(shot_journal_cb_t f, void *ctx)
   {
     take();
     more = journal_next(&journal, &it, &entry);
+    if ( more )
+    {
+      time = journal_entry_time(&journal, &entry, &source);  // Shots fired before the clock was set get their time here
+    }
     give();                             // Do not hold the journal while talking to a client
 
     if ( !more )
@@ -326,7 +380,9 @@ int shot_journal_replay_session(shot_journal_cb_t f, void *ctx)
     shot.shot          = entry.shot;
     shot.seq           = entry.seq;
     shot.session_type  = entry.session_type;
-    shot.miss          = entry.miss;
+    shot.miss          = (entry.flags & JRNL_FLAG_MISS) != 0;
+    shot.utc           = (time == JRNL_TIME_UNKNOWN) ? 0 : time;
+    shot.clock         = source;
     shot.shot_time     = entry.shot_time;
     shot.x_mm          = entry.x_mm;
     shot.y_mm          = entry.y_mm;

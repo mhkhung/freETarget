@@ -30,6 +30,23 @@
  *   session  - Increases by one for every new session.
  *   shot     - Shot number within the session, starting at 0.
  *
+ * Time
+ *
+ *   Every entry is stamped with the wall clock time when it was
+ *   written (the "time" field):
+ *
+ *     JRNL_TIME_UNKNOWN    no clock was available
+ *     below JRNL_TIME_MIN  seconds since power up; the clock had not
+ *                          been set yet
+ *     otherwise            Unix time (seconds since 1970, UTC)
+ *
+ *   The source of the time (NTP or a client) is kept in the flags.
+ *
+ *   When the clock is set, a JRNL_CLOCK_SET entry records the Unix
+ *   time and the seconds since power up at that moment.  This lets
+ *   journal_entry_time() turn the "seconds since power up" stamps of
+ *   shots fired before the clock was set into Unix time.
+ *
  *--------------------------------------------------------------*/
 #ifndef _JOURNAL_H_
 #define _JOURNAL_H_
@@ -48,6 +65,26 @@
 #define JRNL_SHOT    1         // A scored shot (or a reported miss)
 #define JRNL_SESSION 2         // A new session was started
 #define JRNL_MODE    3         // The session type (sighters / match) changed
+#define JRNL_CLOCK_SET 4       // The wall clock was set
+
+/*
+ * Time stamps
+ */
+#define JRNL_TIME_UNKNOWN 0xFFFFFFFFu // No clock
+#define JRNL_TIME_MIN     1000000000u // Sept 2001. Smaller values are seconds since power up
+
+/*
+ * Flags
+ */
+#define JRNL_FLAG_MISS    0x01 // The shot was reported as a miss
+#define JRNL_SOURCE_SHIFT 1    // Where the time came from, JRNL_SOURCE_xxx
+#define JRNL_SOURCE_MASK  (0x03 << JRNL_SOURCE_SHIFT)
+
+#define JRNL_SOURCE_NONE   0   // The clock has not been set
+#define JRNL_SOURCE_CLIENT 1   // Set by a client with {"TIME":...}
+#define JRNL_SOURCE_NTP    2   // Set by an NTP server
+
+#define JRNL_CLOCKS 16         // Clock settings remembered by the journal (one per power up is enough)
 
 /*
  * Return codes
@@ -65,22 +102,33 @@
 typedef struct __attribute__((packed))
 {
   uint16_t magic;          // JRNL_MAGIC
-  uint8_t  kind;           // JRNL_SHOT, JRNL_SESSION, JRNL_MODE
+  uint8_t  kind;           // JRNL_SHOT, JRNL_SESSION, JRNL_MODE, JRNL_CLOCK_SET
   uint8_t  version;        // JRNL_VERSION
   uint32_t seq;            // Global sequence number, never reset
   uint32_t session;        // Session number
   uint16_t shot;           // Shot number within the session (0 based)
   uint8_t  session_type;   // SESSION_xxx bits at the time of the entry
-  uint8_t  miss;           // 1 if the shot was reported as a miss
+  uint8_t  flags;          // JRNL_FLAG_MISS and the time source
   uint32_t shot_time;      // Time of the shot in ms (since the start of the run)
-  float    x_mm;           // Location on the target face
-  float    y_mm;
-  float    radius;         // Polar location
-  float    angle;          // Radians
-  int32_t  timer_count[4]; // N, E, S, W counter values
-  uint16_t face_strike;    // Face strike count
-  uint16_t sensor_status;  // Sensor status bits
-  uint32_t reserved;       // Written as 0xFFFFFFFF
+  union
+  {
+    struct                 // JRNL_SHOT
+    {
+      float    x_mm;       // Location on the target face
+      float    y_mm;
+      float    radius;     // Polar location
+      float    angle;      // Radians
+      int32_t  timer_count[4]; // N, E, S, W counter values
+      uint16_t face_strike;    // Face strike count
+      uint16_t sensor_status;  // Sensor status bits
+    };
+    struct                 // JRNL_CLOCK_SET
+    {
+      uint32_t boot_seq;   // seq of the first entry written since power up
+      uint32_t uptime;     // Seconds since power up when the clock was set to "time"
+    } clock;
+  };
+  uint32_t time;           // Wall clock time stamp, see above
   uint32_t crc;            // CRC32 of the preceding 60 bytes
 } jrnl_entry_t;
 
@@ -96,6 +144,20 @@ typedef struct
   uint32_t size;                                          // Bytes, a multiple of sector_size
   uint32_t sector_size;                                   // Erase sector size, a multiple of JRNL_ENTRY_SIZE
 } jrnl_flash_t;
+
+/*
+ * Clock source.  Returns the current time stamp (see "Time" above)
+ * and sets *source to JRNL_SOURCE_xxx.
+ */
+typedef uint32_t (*jrnl_now_t)(void *ctx, uint8_t *source);
+
+typedef struct
+{
+  uint32_t boot_seq;               // Covers entries from this seq
+  uint32_t seq;                    // up to (not including) the JRNL_CLOCK_SET entry
+  uint32_t offset;                 // Unix time - seconds since power up
+  uint8_t  source;                 // JRNL_SOURCE_xxx
+} jrnl_clock_t;
 
 /*
  * Journal state
@@ -114,6 +176,12 @@ typedef struct
   uint8_t      session_type;       // Session type from the latest entry
   uint32_t     entries;            // Valid entries found by journal_open()
   uint32_t     bad_entries;        // Entries that failed the CRC in journal_open()
+  jrnl_now_t   now;                // Time stamps entries, NULL = JRNL_TIME_UNKNOWN
+  void        *now_ctx;
+  uint32_t     boot_seq;           // seq of the first entry written since journal_open()
+  uint32_t     last_ntp_time;      // Newest NTP time stamp in the journal (0 = none)
+  uint32_t     clock_count;        // Valid entries in clocks[]
+  jrnl_clock_t clocks[JRNL_CLOCKS];// Newest clock settings
 } journal_t;
 
 /*
@@ -135,6 +203,9 @@ int  journal_open(journal_t *j, const jrnl_flash_t *flash);       // Scan the st
 int  journal_append_shot(journal_t *j, jrnl_entry_t *entry);      // Append a shot, fills in seq / session / shot
 int  journal_new_session(journal_t *j, uint8_t session_type);     // Start a new session
 int  journal_set_mode(journal_t *j, uint8_t session_type);        // Record a session type change
+void journal_set_time_source(journal_t *j, jrnl_now_t now, void *ctx); // Call after journal_open()
+int  journal_clock_set(journal_t *j, uint32_t unix_time, uint32_t uptime, uint8_t source); // The clock was set
+uint32_t journal_entry_time(const journal_t *j, const jrnl_entry_t *entry, uint8_t *source); // Unix time of an entry, or JRNL_TIME_UNKNOWN
 void journal_iter_session(const journal_t *j, jrnl_iter_t *it);   // Iterate over the shots of the current session
 void journal_iter_after(const journal_t *j, jrnl_iter_t *it, uint32_t after_seq); // Iterate over all entries after a seq
 bool journal_next(const journal_t *j, jrnl_iter_t *it, jrnl_entry_t *entry);      // Next matching entry, false when done

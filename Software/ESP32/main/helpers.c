@@ -29,6 +29,7 @@
 #include "analog_io.h"
 #include "WiFi.h"
 #include "serial_io.h"
+#include "wall_clock.h"
 
 #define SHOT_TIME_TO_SECONDS(x) ((real_t)(x)) / 1000000.0
 real_t SQ(real_t a)
@@ -575,6 +576,13 @@ void build_json_score(shot_record_t *shot,     // Pointer to shot record
 
       case SCORE_TIME:                                              // Time
         score_append(out, out_size, &used, ", \"time\":%ld, \"time_to_go\":%ld", shot->shot_time, time_to_go);
+        break;
+
+      case SCORE_UTC:                                               // Time of day, only if the clock is set
+        if ( shot->utc != 0 )
+        {
+          score_append(out, out_size, &used, ", \"utc\":%u, \"clock\":\"%s\"", shot->utc, wall_clock_source_name((int)shot->clock));
+        }
         break;
 
       case SCORE_ELAPSED:                                           // Time since shooting began

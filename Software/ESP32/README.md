@@ -55,6 +55,27 @@ power loss.
   sighters or match, and reconnecting clients receive that session's shots.
 - **Status:** `{"ECHO":0}` shows a `JOURNAL` line.
 
+## Time of day
+
+The board has no battery-backed clock, so the time of day is set again after
+every power-up. Each shot then carries `"utc"` (Unix seconds) and `"clock"`,
+which says where the time came from:
+
+- `"ntp"`: in station mode (`WIFI_SSID` set) the target asks a time server
+  itself: the one the router announces over DHCP, or `pool.ntp.org`. NTP always
+  takes priority.
+- `"client"`: a client sent `{"TIME": <Unix seconds>}`. This is only accepted
+  if the clock has not been set yet since power-up, and only if it is not
+  earlier than the firmware's build date or the newest NTP time already in the
+  journal. In access point mode this is the only source.
+
+`{"TIME":0}` reports the clock without setting it. `{"ECHO":0}` shows a `CLOCK`
+line.
+
+Shots fired before the clock is set are sent without `"utc"`. The journal
+records when the clock is set, so those shots get their time when they are
+replayed later (for example to a client that connects afterwards).
+
 **Upgrading existing units:** an OTA update cannot change the partition table.
 A unit updated only over the air has no `shots` partition. It keeps working,
 but it keeps shots in RAM only and reports this at start-up. Flash once over USB

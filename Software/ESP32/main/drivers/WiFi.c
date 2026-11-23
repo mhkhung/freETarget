@@ -51,6 +51,7 @@
 #include "http_client.h"
 #include "json.h"
 #include "shot_journal.h"
+#include "wall_clock.h"
 #include "nonvol.h"
 #include "serial_io.h"
 #include "timer.h"
@@ -331,7 +332,8 @@ void WiFi_station_init(void)
   WiFi_config.sta.pmf_cfg.required = false;
   esp_wifi_set_mode(WIFI_MODE_STA);
   esp_wifi_set_config(WIFI_IF_STA, &WiFi_config);
-  esp_wifi_start(); // Start the WiFi
+  wall_clock_ntp_init(); // Before the WiFi starts so the router's NTP server is picked up
+  esp_wifi_start();      // Start the WiFi
 
   /*
    * Wait here for an event to occur

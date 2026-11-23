@@ -119,6 +119,7 @@
 #define SCORE_MISS        'M'         // Include miss status
 #define SCORE_SESSION     '?'         // Include session type
 #define SCORE_TIME        'T'         // Include time stamp
+#define SCORE_UTC         'U'         // Include the time of day and its source (if known)
 #define SCORE_ELAPSED     'D'         // Include elapsed time
 #define SCORE_XY          'X'         // Include X-Y coordinates
 #define SCORE_POLAR       'P'         // Include polar coordinates
@@ -127,14 +128,14 @@
 #define SCORE_EVENT       'E'         // Include the athelte name
 #define SCORE_TEST        '$'         // Test the client with a test shot
 
-#define SCORE_ALL        "{SQ?TXPHOE}" // shot / miss / target / time / x-y / radius-angle / North-East-South-West / target type
-#define SCORE_USB        "{SQ?TX}"    // USB score elements
-#define SCORE_TCPIP      "{SQ?TXE}"   // TCP score elements
-#define SCORE_BLUETOOTH  "{SQ?TX}"    // Bluetooth score elements
-#define SCORE_HTTP       "{SQ?TXPOE}" // HTTP score elements
+#define SCORE_ALL        "{SQ?TUXPHOE}" // shot / miss / target / time / x-y / radius-angle / North-East-South-West / target type
+#define SCORE_USB        "{SQ?TUX}"   // USB score elements
+#define SCORE_TCPIP      "{SQ?TUXE}"  // TCP score elements
+#define SCORE_BLUETOOTH  "{SQ?TUX}"   // Bluetooth score elements
+#define SCORE_HTTP       "{SQ?TUXPOE}" // HTTP score elements
 #define SCORE_HTTP_PRIME "{#}"        // HTTP Prime the client
 #define SCORE_HTTP_TEST  "{$}"        // HTTP Test the client
-#define SCORE_SEND_MISS  "{SQMTX}"    // Send a miss
+#define SCORE_SEND_MISS  "{SQMTUX}"   // Send a miss
 
 #define HTTP_CLOSE_TIME 15l           // Time to close the HTTP connection after the last shot
 
@@ -178,6 +179,8 @@ typedef struct
 {
   unsigned int shot;           // Shot number within the session (0 based), set by shot_journal_record()
   unsigned int seq;            // Journal sequence number, unique per shot and never reset (0 = not journaled)
+  unsigned int utc;            // Time of day, Unix seconds (0 = unknown), set by shot_journal_record()
+  unsigned int clock;          // Where utc came from, JRNL_SOURCE_xxx
   unsigned int miss;
   unsigned int session_type;   // What kind of information is contained in the score
   double       x;              // X location of shot as computed in clock cycles
