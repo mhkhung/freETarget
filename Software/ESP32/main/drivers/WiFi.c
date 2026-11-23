@@ -603,7 +603,7 @@ void WiFi_tcp_server_task(void *pvParameters)
     /*
      *  Time out till the next time
      */
-    vTaskDelay(ONE_SECOND / 2);
+    vTaskDelay(ONE_SECOND / 10);   // Scores reach a PC client within 100 ms
   }
 }
 
@@ -619,7 +619,9 @@ void WiFi_tcp_server_task(void *pvParameters)
  *
  * If there is any data in the tcpip_queue_2_socket queue, this function
  * extracts the data and then loops through the active sockets to put the data
- * out to the client.
+ * out to the client.  It empties the queue on every call: taking only one
+ * buffer let a long listing (an ECHO) fill the queue and the next scores were
+ * dropped.  With no client connected the output is discarded.
  *
  * When trying to send to a previously active socket which is now closed, the
  * SEND(ALL,) function will return a -1 to indicate that no information was sent.
@@ -641,8 +643,7 @@ static void tcpip_server_io(void)
                              /*
                               * Out to TCPIP
                               */
-  to_send = tcpip_queue_2_socket(rx_buffer, sizeof(rx_buffer));
-  if ( to_send > 0 )
+  while ( (to_send = tcpip_queue_2_socket(rx_buffer, sizeof(rx_buffer))) > 0 )   // Everything waiting, not one buffer
   {
     for ( i = 0; i != MAX_SOCKETS; i++ )
     {
