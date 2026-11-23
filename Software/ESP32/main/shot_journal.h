@@ -79,7 +79,7 @@ uint32_t shot_journal_last_ntp_time(void);                          // Newest NT
 int  shot_journal_replay_session(shot_journal_cb_t f, void *ctx);   // Replay the current session, returns the count
 void shot_journal_show(void);                                       // Print the journal status (ECHO)
 void shot_journal_set_notify(shot_journal_notify_t f);              // Install the new entry callback
-void shot_journal_cursor_start(shot_journal_cursor_t *c, unsigned int after_seq); // after_seq 0 = start of the current session
+void shot_journal_cursor_start(shot_journal_cursor_t *c, unsigned int after_seq); // 0 = current open session, or wait for the next one
 void shot_journal_cursor_start_all(shot_journal_cursor_t *c);       // From the oldest entry still in the journal
 bool shot_journal_cursor_next(shot_journal_cursor_t *c, shot_journal_event_t *ev); // false when caught up (call again later)
 unsigned int shot_journal_session(void);                            // Current session number (0 = none)

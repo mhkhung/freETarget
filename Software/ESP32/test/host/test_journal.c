@@ -990,6 +990,56 @@ static void test_end_session(void)
   sim_free(f);
 }
 
+static void test_activity_time(void)
+{
+  sim_flash_t *f = sim_new(4);
+  journal_t    j;
+  sim_clock_t  c;
+  jrnl_entry_t e;
+  uint32_t     shot_seq;
+
+  printf("activity time survives clock updates and restarts\n");
+  power_up(&j, f, &c);
+  CHECK(journal_entry_time(&j, &j.activity, NULL) == JRNL_TIME_UNKNOWN);
+  set_clock(&j, &c, 1800000000u, JRNL_SOURCE_NTP);
+  CHECK(journal_entry_time(&j, &j.activity, NULL) == JRNL_TIME_UNKNOWN);
+
+  CHECK(journal_new_session(&j, 2) == JRNL_OK);
+  CHECK(j.activity.kind == JRNL_SESSION);
+  c.uptime = 10;
+  e = make_shot(1);
+  CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+  shot_seq = e.seq;
+  CHECK(journal_entry_time(&j, &j.activity, NULL) == 1800000010u);
+
+  c.uptime = 20;
+  set_clock(&j, &c, 1800000020u, JRNL_SOURCE_NTP);
+  CHECK(j.newest.kind == JRNL_CLOCK_SET);
+  CHECK(j.activity.seq == shot_seq);
+  power_up(&j, f, &c);
+  CHECK(j.activity.seq == shot_seq);
+  set_clock(&j, &c, 1800007200u, JRNL_SOURCE_CLIENT);
+  CHECK(journal_entry_time(&j, &j.activity, NULL) == 1800000010u);
+  power_up(&j, f, &c);
+  CHECK(journal_entry_time(&j, &j.activity, NULL) == 1800000010u);
+
+  CHECK(journal_set_mode(&j, 4) == JRNL_OK);
+  CHECK(j.activity.kind == JRNL_MODE);
+  c.uptime = 30;
+  set_clock(&j, &c, 1800008000u, JRNL_SOURCE_NTP);
+  CHECK(journal_entry_time(&j, &j.activity, NULL) == 1800007970u); // A mode change before clock sync is backfilled
+  CHECK(journal_end_session(&j, JRNL_END_COMMAND) == JRNL_OK);
+  CHECK(j.activity.kind == JRNL_MODE);
+
+  CHECK(journal_new_session(&j, 0) == JRNL_OK);
+  CHECK(j.activity.kind == JRNL_SESSION);
+  CHECK(j.activity.session == j.session);
+  power_up(&j, f, &c);
+  CHECK(j.activity.kind == JRNL_SESSION);
+  CHECK(j.activity.session == j.session);
+  sim_free(f);
+}
+
 int main(void)
 {
   test_crc();
@@ -1011,6 +1061,7 @@ int main(void)
   test_follow_overrun();
   test_target();
   test_end_session();
+  test_activity_time();
 
   printf("\n%d checks, %d failures\n", checks, failures);
   return failures == 0 ? 0 : 1;

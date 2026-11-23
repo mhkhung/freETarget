@@ -409,7 +409,7 @@ bool shot_journal_session_open(void)
  *
  * Within this power up the idle time is measured with the uptime.  For
  * a session resumed at power up it is at least the uptime, and more if
- * the clock shows the last entry was written long before.
+ * the clock shows the last shot or session change was long before.
  *
  *--------------------------------------------------------------*/
 void shot_journal_tick(void)
@@ -433,7 +433,7 @@ void shot_journal_tick(void)
   {
     idle = uptime;
     take();
-    last = journal_entry_time(&journal, &journal.newest, NULL);
+    last = journal_entry_time(&journal, &journal.activity, NULL);
     give();
     now = wall_clock_now(&source);
     if ( (source != JRNL_SOURCE_NONE) && (last != JRNL_TIME_UNKNOWN) && (now > last) && ((now - last) > idle) )
@@ -568,9 +568,10 @@ void shot_journal_cursor_start(shot_journal_cursor_t *c, unsigned int after_seq)
   }
 
   take();
-  if ( (after_seq == 0) && (journal.session != 0) )
+  if ( after_seq == 0 )
   {
-    after_seq = journal.session_start_seq - 1;        // From the start of the current session, including its JRNL_SESSION entry
+    after_seq = journal.session_open ? journal.session_start_seq - 1 : journal.next_seq - 1;
+    // Replay an open session, or wait for the next session without replaying the ended one
   }
   journal_iter_after(&journal, &c->it, after_seq);
   give();

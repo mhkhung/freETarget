@@ -19,7 +19,8 @@
  *
  *   {"AFTER": n}   Send shots from the journal, then keep sending new
  *                  ones as they are fired.
- *                    0  from the start of the current session
+ *                    0  from the start of the current open session;
+ *                       if it has ended, wait for the next session
  *                    n  everything after seq n (to resume after a
  *                       dropped connection without duplicates)
  *                  Must be sent on its own.  Sending it again starts

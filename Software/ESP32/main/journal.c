@@ -100,6 +100,11 @@ static bool is_unix_time(uint32_t time)
   return (time >= JRNL_TIME_MIN) && (time != JRNL_TIME_UNKNOWN);
 }
 
+static bool is_activity(const jrnl_entry_t *entry)
+{
+  return (entry->kind == JRNL_SHOT) || (entry->kind == JRNL_SESSION) || (entry->kind == JRNL_MODE);
+}
+
 /*
  * Remember a clock setting.  The newest JRNL_CLOCKS (by seq) are kept.
  */
@@ -181,6 +186,7 @@ int journal_open(journal_t *j, const jrnl_flash_t *flash)
 
   memset(j, 0, sizeof(*j));
   j->flash = *flash;
+  j->activity.time = JRNL_TIME_UNKNOWN;
 
   if ( (flash->sector_size == 0) || ((flash->sector_size % JRNL_ENTRY_SIZE) != 0) // Entries must not straddle a sector
        || ((flash->size % flash->sector_size) != 0)                             // Whole sectors only
@@ -262,6 +268,11 @@ int journal_open(journal_t *j, const jrnl_flash_t *flash)
       j->session_start_seq = entry.seq;
     }
 
+    if ( is_activity(&entry) && (entry.seq > j->activity.seq) )
+    {
+      j->activity = entry;
+    }
+
     if ( ((entry.kind == JRNL_SESSION) || (entry.kind == JRNL_MODE)) && (entry.seq >= target_seq) )
     {
       target_seq = entry.seq;
@@ -329,6 +340,10 @@ static int write_entry(journal_t *j, jrnl_entry_t *entry)
   entry->crc     = journal_crc32(entry, CRC_LENGTH);
   note_time(j, entry);
   j->newest      = *entry;
+  if ( is_activity(entry) )
+  {
+    j->activity = *entry;
+  }
 
   for ( tries = 0; tries != j->slots; tries++ )
   {

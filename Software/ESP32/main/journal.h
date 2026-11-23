@@ -189,6 +189,7 @@ typedef struct
   uint16_t     target;             // Target type of the current session (written into JRNL_SESSION / JRNL_MODE)
   bool         session_open;       // false before the first session and after JRNL_END: the next shot starts a new one
   jrnl_entry_t newest;             // The newest entry (for its time stamp)
+  jrnl_entry_t activity;           // Latest shot/session/mode entry; clock updates do not restart the idle time
   uint32_t     entries;            // Valid entries found by journal_open()
   uint32_t     bad_entries;        // Entries that failed the CRC in journal_open()
   jrnl_now_t   now;                // Time stamps entries, NULL = JRNL_TIME_UNKNOWN

@@ -61,10 +61,24 @@ def main():
                 raise RuntimeError("Could not find " + pattern)
             parts.append(found.group())
         (build / "json_parse_host.inc").write_text("\n\n".join(parts) + "\n")
-        for name in ("test_json_stream", "test_timed_fire", "test_helpers", "test_json_text"):
+        (build / "shot_journal_host.h").write_text(without_includes((MAIN / "shot_journal.h").read_text()))
+        source = (MAIN / "shot_journal.c").read_text()
+        parts = []
+        for name in ("note_activity", "entry_to_shot", "shot_journal_record", "shot_journal_end_session",
+                     "shot_journal_session_open", "shot_journal_tick", "shot_journal_clock_set",
+                     "shot_journal_cursor_start", "shot_journal_cursor_start_all", "shot_journal_cursor_next"):
+            found = re.search(r"^(?:static )?(?:void|bool) " + name + r"\(.*?^\}", source, re.MULTILINE | re.DOTALL)
+            if found is None:
+                raise RuntimeError("Could not find " + name)
+            parts.append(found.group())
+        (build / "shot_journal_host.inc").write_text("\n\n".join(parts) + "\n")
+        for name in ("test_json_stream", "test_timed_fire", "test_helpers", "test_json_text", "test_shot_journal"):
             binary = build / name
-            subprocess.run(compiler + flags + ["-I" + str(build), "-I" + str(MAIN / "drivers"),
-                           str(HERE / (name + ".c")), "-o", str(binary), "-lm"], check=True)
+            sources = [str(HERE / (name + ".c"))]
+            if name == "test_shot_journal":
+                sources.append(str(MAIN / "journal.c"))
+            subprocess.run(compiler + flags + ["-I" + str(build), "-I" + str(MAIN), "-I" + str(MAIN / "drivers")]
+                           + sources + ["-o", str(binary), "-lm"], check=True)
             subprocess.run([str(binary)], check=True)
 
 
