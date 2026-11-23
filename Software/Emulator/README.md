@@ -188,15 +188,40 @@ The key logs are `target-console.log` and `target-emulator.log`.
 | Dashboard | 18888 | — |
 | Firmware HTTP | 18000 | 18100 |
 | Firmware WebSocket | 18080 | 18180 |
+| PC client TCP (target port 1090) | 1090 | 1190 |
 | Board co-simulation | 18990 | 19090 |
 | Emulator control | 18991 | 19091 |
 
-The dashboard, firmware forwarding, board and control sockets bind to loopback.
+The dashboard, firmware forwarding, board and control sockets bind to loopback
+unless `run --lan` is used (below).
 Guest-initiated TCP/UDP is restricted; DNS points to localhost so the fixture
 does not contact public time/name servers. No TAP device, bridge or root access
 is needed. Dashboard HTTP mutations require JSON and reject foreign origins.
 `run --port 18889` changes the dashboard port; it still uses the same single
 interactive firmware instance/ports.
+
+## PC client and other machines
+
+The PC client connects over TCP to the target's port 1090, forwarded to 1090 on
+this computer. On the same computer, connect it to `127.0.0.1` port 1090.
+
+To reach the emulator from another machine (a PC client on a Windows laptop,
+or a phone or tablet showing the athlete page), start it with:
+
+```sh
+python3 Software/Emulator/emulator.py run --lan
+```
+
+It prints this computer's address. Point the PC client at that address, port
+1090, and browsers at `http://<address>:18000/`. The emulated target is not on
+your real network, so its `FET-TARGET` mDNS name does not resolve: use the IP
+address. macOS may ask whether `esp-emu` may accept incoming connections.
+
+`--lan` opens only the firmware's own services: the athlete page, its
+WebSocket and the PC client port. Like a real target on the range Wi-Fi they
+have no password, so anyone on the network can send commands. The dashboard,
+board co-simulation and emulator control ports can fire shots and reset the
+CPU, so they always stay on loopback.
 
 Implementation references:
 [Espressif emulator](https://github.com/espressif/esp-emulator),

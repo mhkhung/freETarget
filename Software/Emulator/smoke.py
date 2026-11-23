@@ -1,7 +1,9 @@
 """Integration checks against the emulated CPU and the real firmware APIs."""
 import json
 import math
+import re
 import shutil
+import socket
 import subprocess
 import time
 import urllib.request
@@ -72,6 +74,7 @@ def main():
             assert browser.receive()["hello"] == "freETarget"
         print("PASS: browser-sized HTTP and WebSocket headers, including a 3 KiB localhost cookie", flush=True)
         shot_seqs = []
+        pc_client = socket.create_connection(("127.0.0.1", runtime.tcp_port), timeout=10)  # The PC client's port
         with WebSocket(runtime.ws_url, timeout=10) as ws:
             hello = ws.receive()
             assert hello["hello"] == "freETarget" and not hello["session_open"]
@@ -103,6 +106,19 @@ def main():
             session = event["session"]
         assert len(shot_seqs) == len(cases) and len(set(shot_seqs)) == len(cases)
         print("PASS: mouse-coordinate physics -> GPIO -> pulse counters -> real scoring -> journal -> WebSocket", flush=True)
+        received, deadline = b"", time.monotonic() + 10
+        with pc_client:
+            pc_client.settimeout(1)
+            while time.monotonic() < deadline:
+                seqs = [int(n) for n in re.findall(rb'"shot":\s*\d+,\s*"seq":\s*(\d+)', received)]
+                if set(shot_seqs) <= set(seqs):
+                    break
+                try:
+                    received += pc_client.recv(65536)
+                except socket.timeout:
+                    pass
+        assert set(shot_seqs) <= set(seqs), f"PC client port sent seqs {seqs}, expected {shot_seqs}"
+        print("PASS: the same shots reach the PC client's TCP port (1090 on the target)", flush=True)
 
         with WebSocket(runtime.ws_url, timeout=10) as ws:
             ws.receive()

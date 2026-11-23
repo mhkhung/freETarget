@@ -18,9 +18,15 @@ from physics import Target, speed_of_sound
 
 
 class Runtime:
-    def __init__(self, fresh=False, offset=0, state="target"):
+    def __init__(self, fresh=False, offset=0, state="target", lan=False):
         self.http_port = 18000 + offset
         self.ws_port = 18080 + offset
+        self.tcp_port = 1090 + offset         # The PC client's TCP port (its default is 1090)
+        # Only the firmware's own services (athlete page, WebSocket, PC client
+        # TCP) may be offered to the network. The dashboard, co-simulation and
+        # control sockets can fire shots and reset the CPU: always loopback.
+        self.lan = lan
+        self.firmware_bind = "0.0.0.0" if lan else "127.0.0.1"
         self.cosim_port = 18990 + offset
         self.control_port = 18991 + offset
         self.ws_url = f"ws://127.0.0.1:{self.ws_port}/ws"
@@ -53,10 +59,16 @@ class Runtime:
         factory = RUNTIME / "factory.bin"
         if not factory.is_file():
             raise RuntimeError("Run python3 emulator.py prepare first")
-        for port in (self.http_port, self.ws_port, self.cosim_port, self.control_port):
+        for address, port in ((self.firmware_bind, self.http_port), (self.firmware_bind, self.ws_port),
+                              (self.firmware_bind, self.tcp_port),
+                              ("127.0.0.1", self.cosim_port), ("127.0.0.1", self.control_port)):
             with socket.socket() as probe:
                 probe.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-                probe.bind(("127.0.0.1", port))
+                try:
+                    probe.bind((address, port))
+                except OSError as error:
+                    raise RuntimeError(f"port {port} is in use ({error}); is another emulator running? "
+                                       "Stop it with: python3 Software/Emulator/emulator.py stop") from None
         if self.fresh or not self.flash.exists():
             shutil.copyfile(factory, self.flash)
         config = RUNTIME / "settings.json"
@@ -73,7 +85,9 @@ class Runtime:
                    "--config", str(config), "--save-state", "--log-color", "never",
                    "--log-file", str(RUNTIME / (self.state + "-emulator.log")),
                    "--wifi-ssid", "freetarget-emulator", "--wifi-password", "emulator123",
-                   "--net", f"user,net=10.0.2.0/24,restrict=yes,dns=127.0.0.1,hostfwd=tcp:127.0.0.1:{self.http_port}-:80,hostfwd=tcp:127.0.0.1:{self.ws_port}-:8080",
+                   "--net", "user,net=10.0.2.0/24,restrict=yes,dns=127.0.0.1," + ",".join(
+                       f"hostfwd=tcp:{self.firmware_bind}:{host}-:{guest}"
+                       for host, guest in ((self.http_port, 80), (self.ws_port, 8080), (self.tcp_port, 1090))),
                    "--cosim-tcp", f"127.0.0.1:{self.cosim_port}",
                    "--control-tcp", f"127.0.0.1:{self.control_port}"]
         self.process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -179,7 +193,7 @@ class Runtime:
                     "speed_m_s": speed_of_sound(self.board.target.temperature, self.board.target.humidity) * 1000,
                     "sensor_positions": self.board.target.sensors(),
                     "sensor_diameter_mm": self.board.target.diameter_mm,
-                    "page_url": self.page_url, "ws_url": self.ws_url,
+                    "page_url": self.page_url, "ws_url": self.ws_url, "tcp_port": self.tcp_port, "lan": self.lan,
                     "expected": list(self.board.expected), "events": list(self.events), "logs": list(self.logs)[-60:]}
 
     def close(self):
@@ -197,8 +211,18 @@ class Runtime:
                 self.process.wait()
 
 
-def serve(port, fresh):
-    runtime = Runtime(fresh=fresh)
+def lan_address():
+    """This machine's address on its default network (no packet is sent)."""
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+        try:
+            probe.connect(("192.0.2.1", 9))   # TEST-NET-1: only selects the outgoing interface
+            return probe.getsockname()[0]
+        except OSError:
+            return None
+
+
+def serve(port, fresh, lan=False):
+    runtime = Runtime(fresh=fresh, lan=lan)
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *args):
@@ -272,6 +296,12 @@ def serve(port, fresh):
             runtime.start()
             print(f"Virtual target: http://127.0.0.1:{port}/", flush=True)
             print(f"Firmware console: {RUNTIME / 'target-console.log'}", flush=True)
+            host = (lan_address() or "<this computer's IP>") if lan else "127.0.0.1"
+            print(f"Athlete page: http://{host}:{runtime.http_port}/", flush=True)
+            print(f"PC client (TCP): {host} port {runtime.tcp_port}", flush=True)
+            if lan:
+                print("LAN mode: the athlete page, WebSocket and PC client port accept connections from other "
+                      "machines; the dashboard stays on this computer.", flush=True)
             print("Stop with Ctrl-C, or from any terminal: python3 Software/Emulator/emulator.py stop", flush=True)
             server.serve_forever()
         finally:
