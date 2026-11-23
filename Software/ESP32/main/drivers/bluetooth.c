@@ -26,6 +26,7 @@
 #include "serial_io.h"
 #include "timer.h"
 #include "json.h"
+#include "shot_journal.h"
 #include "nonvol.h"
 
 /*
@@ -205,24 +206,23 @@ static void send_AT(void)
 
  *
  *******************************************************************************/
+static bool replay_to_bluetooth(shot_record_t *shot, void *ctx) // Send one saved shot to the Bluetooth client
+{
+  char score[SCORE_TEXT];                                          // Replayed score message
+
+  build_json_score(shot, SCORE_BLUETOOTH, score, sizeof(score));
+  serial_to_all(score, BLUETOOTH);
+  return true;
+}
+
 void Bluetooth_start_new_connection(void) // Socket token to use
 {
-  int  i;
-  char score[SCORE_TEXT]; // Replayed score message
-
   /*
    *  Inform the PC what is going on
    */
   SEND(BLUETOOTH, sprintf(_xs, "{\"%s\":%ld}", _GREETING_, run_time_seconds());)
 
-  for ( i = 0; i != SHOT_SPACE; i++ )
-  {
-    if ( (record[i].session_type & SESSION_VALID) != 0 )
-    {
-      build_json_score(&record[i], SCORE_BLUETOOTH, score, sizeof(score));
-      serial_to_all(score, BLUETOOTH);
-    }
-  }
+  shot_journal_replay_session(replay_to_bluetooth, NULL); // Bring the new client up to date
 
   /*
    *  All done, return

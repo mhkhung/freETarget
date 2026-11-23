@@ -6,3 +6,6 @@ phy_init, data, phy,     0xf000,  0x1000,
 factory,  app,  factory, 0x10000, 2M,
 ota_0,    app,  ota_0,   ,        2M,
 ota_1,    app,  ota_1,   ,        2M,
+# Shot journal (main/journal.c).  Added after ota_1 so no existing partition moves.
+# OTA updates cannot change this table: flash once over USB to add it.
+shots,    data, 0x40,    0x610000, 256K,

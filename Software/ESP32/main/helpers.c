@@ -561,6 +561,10 @@ void build_json_score(shot_record_t *shot,     // Pointer to shot record
         score_append(out, out_size, &used, "\"%s\":%d", _SHOT_, (shot->shot) + 1); // The client wants shots to start at 1
         break;
 
+      case SCORE_SEQ:                                               // Journal sequence number
+        score_append(out, out_size, &used, ", \"seq\":%u", shot->seq);
+        break;
+
       case SCORE_MISS:                                              // Miss
         score_append(out, out_size, &used, ", \"miss\":%d", shot->miss);
         break;

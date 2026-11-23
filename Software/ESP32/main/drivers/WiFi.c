@@ -50,6 +50,7 @@
 #include "diag_tools.h"
 #include "http_client.h"
 #include "json.h"
+#include "shot_journal.h"
 #include "nonvol.h"
 #include "serial_io.h"
 #include "timer.h"
@@ -916,11 +917,26 @@ void tcpip_accept_poll(void *parameters)
  * scores.
  *
  *******************************************************************************/
+static bool replay_to_socket(shot_record_t *shot, void *ctx) // Send one saved shot to a new client
+{
+  int  sock = *(int *)ctx;
+  char score[SCORE_TEXT];                                       // Replayed score message
+
+  send_replay(shot, shot->shot, score, sizeof(score));          // Empty if the session type does not match
+  if ( score[0] != 0 )
+  {
+    if ( send(sock, score, strlen(score), 0) < 0 )
+    {
+      return false;                                             // Client went away, stop
+    }
+  }
+  return true;
+}
+
 static void WiFi_start_new_connection(int sock) // Socket token to use
 {
   int  i;
   char str[SHORT_TEXT];
-  char score[SCORE_TEXT]; // Replayed score message
 
   /*
    *  Build up a mask of existing WiFi connections.  Only the TCPIP bits
@@ -941,17 +957,7 @@ static void WiFi_start_new_connection(int sock) // Socket token to use
   target_name(str);
   SEND(ALL, sprintf(_xs, "{\"%s\":%lds, \"NAME\":\"%s\"}", _GREETING_, run_time_seconds(), str);)
 
-  for ( i = 0; i != SHOT_SPACE; i++ )
-  {
-    if ( (record[i].session_type & SESSION_VALID) != 0 )
-    {
-      send_replay(&record[i], i, score, sizeof(score));
-      if ( score[0] != 0 )
-      {
-        send(sock, score, strlen(score), 0);
-      }
-    }
-  }
+  shot_journal_replay_session(replay_to_socket, &sock); // Bring the new client up to date
 
   /*
    *  All done, return

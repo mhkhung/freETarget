@@ -19,6 +19,7 @@
 #include "timer.h"
 #include "diag_tools.h"
 #include "timed_fire.h"
+#include "shot_journal.h"
 
 /*
  * Definitions and includes
@@ -420,7 +421,9 @@ static void timed_fire_next_state(void)
         {
           char score[SCORE_TEXT];                        // JSON score message
 
-          record[shot_in].shot_time = run_time_ms();
+          record[shot_in].shot_time    = run_time_ms();
+          record[shot_in].session_type = SESSION_VALID | json_session_type;
+          shot_journal_record(&record[shot_in]);         // Save the miss, sets the shot number and seq
           build_json_score(&record[shot_in], SCORE_USB, score, sizeof(score)); // Build the JSON for the miss
           serial_to_all(score, ALL);
           shot_in  = (shot_in + 1) % SHOT_SPACE;         // Move to the next shot
@@ -472,7 +475,9 @@ static void timed_fire_exit(void)
 
     while ( shot_in != json_rapid_count )            // Look through all of the shots
     {
-      record[shot_in].shot_time = run_time_ms();
+      record[shot_in].shot_time    = run_time_ms();
+      record[shot_in].session_type = SESSION_VALID | json_session_type;
+      shot_journal_record(&record[shot_in]);         // Save the miss, sets the shot number and seq
       build_json_score(&record[shot_in], SCORE_USB, score, sizeof(score)); // Build the JSON for the miss
       serial_to_all(score, ALL);
       shot_in  = (shot_in + 1) % SHOT_SPACE;         // Move to the next shot

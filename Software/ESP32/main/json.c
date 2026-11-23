@@ -20,6 +20,7 @@
 #include "ctype.h"
 #include "diag_tools.h"
 #include "json.h"
+#include "shot_journal.h"
 #include "mechanical.h"
 #include "mfs.h"
 #include "nonvol.h"
@@ -595,6 +596,7 @@ void show_echo(void)
   SEND(ALL, sprintf(_xs, "\"VERSION\":          %s, ", SOFTWARE_VERSION);)          // Current software version
   esp_ota_get_partition_description(running_partition, &running_app_info);
   SEND(ALL, sprintf(_xs, "\"OTA BUILD\":        %s, ", running_app_info.version);)  // Current OTA identifier
+  shot_journal_show();                                                              // Saved shots
   SEND(ALL, sprintf(_xs, "\"LOCKED\":            \"%s\"", no_yes[json_lock != 0]);) // The JSON is locked
 
 #if ( INCLUDE_OTA_ECHO )

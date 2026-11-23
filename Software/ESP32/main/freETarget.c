@@ -43,6 +43,7 @@
 #include "OTA.h"
 #include "calibrate.h"
 #include "timed_fire.h"
+#include "shot_journal.h"
 
 /*
  *  Variables
@@ -148,6 +149,7 @@ void freeETarget_init(void)
   DAC_calibrate();          // Adjust the DAC to compensate for voltage drop
   multifunction_init();     // Override the MFS if we have to
   get_target_calibration(); // Retrieve the target settings
+  shot_journal_init();      // Recover the shots saved before the last power off
 
   /*
    * Put up a self test
@@ -238,7 +240,7 @@ void freeETarget_target_loop(void *arg)
     gpio_init_single(PCNT_HI);               // Program the port
   }
 
-  start_new_session(0);
+  power_up_session();                        // Resume the saved session, or start a new one
   shot_number = 1;                           // Start counting shots at 1
   run_state |= IN_SHOT;                      // Default to IN_SHOT unless a timed event overrides it
 
@@ -469,6 +471,7 @@ unsigned int reduce(void)
       if ( location != MISS ) // Was it a miss or face strike?
       {
         prepare_score(&record[shot_out], shot_out, NOT_MISSED_SHOT);
+        shot_journal_record(&record[shot_out]); // Save it before telling anyone, sets the shot number and seq
 
         build_json_score(&record[shot_out], SCORE_USB, score, sizeof(score));
         serial_to_all(score, (CONSOLE | AUX_PORT));
@@ -561,13 +564,68 @@ unsigned int reduce(void)
  *  12 - Display sighters
  *  14 - Display score
  *
+ * Starting a new session (0) does not erase the saved shots.  It
+ * starts a new session number in the shot journal, and only the
+ * shots of the current session are replayed to clients.
+ *
  *--------------------------------------------------------------*/
 #define SESSION_PRINT 10                 // Display the session
 
-void start_new_session(int session_type) //
+static void clear_shot_queue(void)       // Forget the shots waiting to be reduced
 {
   unsigned int i;
 
+  for ( i = 0; i != SHOT_SPACE; i++ )
+  {
+    record[i].session_type = SESSION_EMPTY;
+  }
+  shot_in  = 0;
+  shot_out = 0;
+}
+
+static void set_session_timer(int session_type) // Start the time allowed for this kind of session
+{
+  switch ( session_type & (~SESSION_VALID) )
+  {
+    case SESSION_SIGHT:
+      time_to_go = 15 * 60;              // 15 minute sighting timer
+      break;
+
+    case SESSION_MATCH:
+      time_to_go = 75 * 60;
+      break;
+
+    default:
+      time_to_go = 1000;
+      break;
+  }
+  reset_run_time();
+}
+
+static bool print_shot(shot_record_t *shot, void *ctx) // Send one saved shot for {"SESSION":1x}
+{
+  int  wanted = *(int *)ctx;             // SESSION_EMPTY (all), SESSION_SIGHT or SESSION_MATCH
+  char score[SCORE_TEXT];                // JSON score message
+
+  if ( (wanted != SESSION_EMPTY) && ((shot->session_type & wanted) == 0) )
+  {
+    return true;                         // Not this kind, keep going
+  }
+
+  build_json_score(shot, SCORE_USB, score, sizeof(score)); // Send out to the USB
+  serial_to_all(score, ALL);
+
+  if ( (json_remote_modes & REMOTE_MODE_CLIENT) != 0 )     // Send out to the server
+  {
+    build_json_score(shot, SCORE_TCPIP, score, sizeof(score));
+    http_native_request(json_remote_url, METHOD_POST, score, sizeof(score));
+  }
+
+  return true;
+}
+
+void start_new_session(int session_type) //
+{
   DLT(DLT_APPLICATION, SEND(CONSOLE, sprintf(_xs, "start_new_session(%d)", session_type);))
   event_override();                      // Look for any event overrides in the event name
 
@@ -575,47 +633,25 @@ void start_new_session(int session_type) //
   {
     default:
     case SESSION_EMPTY:
-      for ( i = 0; i != SHOT_SPACE; i++ )
-      {
-        record[i].session_type = SESSION_EMPTY;
-      }
-      shot_in  = 0;
-      shot_out = 0;
-      reset_run_time();
-      time_to_go = 1000;
+      clear_shot_queue();
+      set_session_timer(SESSION_EMPTY);
+      shot_journal_new_session(SESSION_EMPTY);
       break;
 
-    case SESSION_SIGHT:     // Nothing to do
-      time_to_go = 15 * 60; // 15 minute sighting timer
-      reset_run_time();
-      break;
-
+    case SESSION_SIGHT:
     case SESSION_MATCH:
-      time_to_go = 75 * 60;
-      reset_run_time();
+      set_session_timer(session_type);
+      shot_journal_set_mode(session_type & (~SESSION_VALID));
       break;
 
     case SESSION_PRINT + SESSION_EMPTY:
     case SESSION_PRINT + SESSION_SIGHT:
     case SESSION_PRINT + SESSION_MATCH:
     {
-      char score[SCORE_TEXT];                                  // JSON score message
+      int wanted = (session_type & (~SESSION_VALID)) - SESSION_PRINT;
 
-      for ( i = 0; i != shot_out; i++ )
-      {
-        if ( ((record[i].session_type & SESSION_VALID) != 0)   // The session has valid data
-             && (record[i].session_type % SESSION_PRINT) == (session_type % SESSION_PRINT) )
-        {
-          build_json_score(&record[i], SCORE_USB, score, sizeof(score)); // Send out to the USB
-          serial_to_all(score, ALL);
-
-          if ( (json_remote_modes & REMOTE_MODE_CLIENT) != 0 ) // Send out to the server
-          {
-            build_json_score(&record[i], SCORE_TCPIP, score, sizeof(score));
-            http_native_request(json_remote_url, METHOD_POST, score, sizeof(score));
-          }
-        }
-      }
+      json_session_type = shot_journal_session_type(); // The JSON parser stored 1x here, printing does not change the session
+      shot_journal_replay_session(print_shot, &wanted);
       break;
     }
   }
@@ -624,6 +660,38 @@ void start_new_session(int session_type) //
    *  All done, return
    */
   return;
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: power_up_session()
+ *
+ * @brief: Pick up where we left off after a restart
+ *
+ * @return: None
+ *
+ *----------------------------------------------------------------
+ *
+ * If the shot journal holds a session, carry on with it: the shot
+ * numbers continue and reconnecting clients get the earlier shots.
+ * The session timer and run time restart because the target has no
+ * clock that keeps running while the power is off.
+ *
+ * Otherwise start a new session as before.
+ *
+ *--------------------------------------------------------------*/
+void power_up_session(void)
+{
+  if ( !shot_journal_resume() )          // Nothing saved
+  {
+    start_new_session(SESSION_EMPTY);
+    return;
+  }
+
+  event_override();                      // Look for any event overrides in the event name
+  clear_shot_queue();
+  set_session_timer(json_session_type);  // Restored by shot_journal_resume()
+  DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "Resuming the saved session");))
 }
 
 /*----------------------------------------------------------------
