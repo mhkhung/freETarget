@@ -367,10 +367,12 @@ static bool send_hello(int fd)
   target_name(name);
   snprintf(text, sizeof(text), "{\"hello\":\"freETarget\", \"version\":%s, \"name\":\"%.60s\", \"session\":%u, \"next_seq\":%u, "
                                "\"utc\":%lu, \"clock\":\"%s\", \"target\":%d, \"athelete\":\"%.60s\", \"event\":\"%.60s\", "
-                               "\"target_name\":\"%.60s\", \"session_type\":%d, \"session_open\":%s}",
+                               "\"target_name\":\"%.60s\", \"session_type\":%d, \"session_open\":%s, "
+                               "\"x_offset\":%.2f, \"y_offset\":%.2f}",
            SOFTWARE_VERSION, name, shot_journal_session(), shot_journal_next_seq(),
            (source == JRNL_SOURCE_NONE) ? 0ul : (unsigned long)now, wall_clock_source_name(source), http_target_type(),
-           json_athlete, json_event, json_target_name, shot_journal_session_type(), shot_journal_session_open() ? "true" : "false");
+           json_athlete, json_event, json_target_name, shot_journal_session_type(), shot_journal_session_open() ? "true" : "false",
+           (double)json_x_offset, (double)json_y_offset);   // The calibration, so clients need not ask for an ECHO
   return send_text(fd, text, strlen(text));
 }
 

@@ -46,8 +46,9 @@
  *                  the firmware version, target name, current session,
  *                  the seq the next entry will get ("next_seq"), and the
  *                  current target type, session type, athlete, event and
- *                  target name, and "session_open" (false once the
- *                  session has ended).  If
+ *                  target name, "session_open" (false once the
+ *                  session has ended), and the calibration offsets
+ *                  "x_offset" and "y_offset" (mm, X_OFFSET/Y_OFFSET).  If
  *                  next_seq is not greater than the last seq a client
  *                  saw, the journal was erased: start over with
  *                  {"AFTER":0}.

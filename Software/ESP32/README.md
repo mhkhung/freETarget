@@ -130,7 +130,8 @@ Browsers and other network clients can use `ws://<target>:8080/ws`. The
 protocol is described in [main/TCPIP/ws_api.h](main/TCPIP/ws_api.h). In short:
 
 - On connecting, the target sends `{"hello": ...}` with its name, firmware
-  version, current session and `next_seq`.
+  version, current session, `next_seq` and its calibration offsets
+  (`x_offset`, `y_offset`).
 - The client sends `{"AFTER": 0}` to receive the current session, or
   `{"AFTER": <last seq seen>}` after reconnecting. The target sends those
   shots from the journal, then `{"caught_up": n}`, then new shots as they are
