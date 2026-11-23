@@ -82,6 +82,7 @@ httpd_handle_t start_webserver(unsigned int port // Port to use for the web serv
   httpd_config_t      config       = HTTPD_DEFAULT_CONFIG();
 
   config.server_port      = port;
+  config.ctrl_port        = ESP_HTTPD_DEF_CTRL_PORT + server_count; // Each server needs its own internal control port
   config.lru_purge_enable = true;
   config.stack_size       = HTTP_SERVER_STACK; // Handlers format replies in local buffers, not in _xs
 
