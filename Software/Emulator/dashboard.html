@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>freETarget · Virtual target</title>
+<style>
+:root{color-scheme:dark;--bg:#101719;--panel:#192326;--line:#314247;--text:#e6f0ed;--muted:#9bb2ae;--green:#8ae0b5;--amber:#f5bd76;--blue:#8dc7fb}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui,sans-serif}
+header{padding:19px 28px;border-bottom:1px solid var(--line);display:flex;gap:16px;align-items:center}header strong{font-size:19px;letter-spacing:-.4px}header small{color:var(--muted)}#status{margin-left:auto;color:var(--amber)}#status.up{color:var(--green)}main{padding:24px;max-width:1700px;margin:auto}.layout{display:grid;grid-template-columns:minmax(380px,510px) minmax(0,1fr);gap:22px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}.body{padding:18px}.label{font-size:11px;text-transform:uppercase;letter-spacing:1.6px;color:var(--muted);font-weight:700}h1{font-size:22px;margin:4px 0 3px;letter-spacing:-.5px}p{margin:0 0 12px;color:var(--muted)}canvas{display:block;width:100%;aspect-ratio:1;background:#152023;cursor:crosshair;touch-action:manipulation;border-radius:8px}.row{display:flex;flex-wrap:wrap;gap:9px;align-items:center}.between{justify-content:space-between}.legend{font-size:12px;color:var(--muted);margin:12px 0}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;background:var(--green)}.dot.actual{background:var(--amber)}button,input,select{font:inherit;color:inherit;border:1px solid var(--line);border-radius:6px;background:#202f33;padding:6px 10px}button{cursor:pointer}button:hover{border-color:var(--green)}button.primary{background:#28463c;border-color:#537c6b}button:disabled{opacity:.45;cursor:wait}label{color:var(--muted);font-size:12px}input[type=number]{width:76px;margin-left:5px}input[type=checkbox]{accent-color:var(--green)}table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums;margin-top:10px}td,th{text-align:right;padding:5px 8px;border-bottom:1px solid var(--line)}td:first-child,th:first-child{text-align:left}th{color:var(--muted);font-weight:500;font-size:11px}.controls{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);display:grid;gap:12px}.metrics{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}.metric{padding:10px;background:#101a1d;border:1px solid var(--line);border-radius:7px}.metric strong{display:block;font-size:20px;font-variant-numeric:tabular-nums}.metric span{font-size:11px;color:var(--muted)}.framehead{padding:13px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between}.framehead a{font-size:12px;color:var(--blue)}iframe{display:block;width:100%;height:890px;border:0;background:#20221f}details{margin-top:18px}summary{cursor:pointer;color:var(--muted)}pre{white-space:pre-wrap;overflow:auto;background:#0b1214;border:1px solid var(--line);border-radius:8px;padding:12px;max-height:260px;font:11px/1.6 ui-monospace,monospace;color:#b9cfc7}#message{color:var(--amber);min-height:22px;margin-top:10px}.note{font-size:11px;color:var(--muted);margin:14px 0 0}.note b{color:var(--amber)}@media(max-width:950px){.layout{grid-template-columns:1fr}main{padding:12px}header{padding:14px}header small{display:none}iframe{height:1000px}}
+</style>
+<header><strong>freETarget <span style="color:var(--green)">Lab</span></strong><small>ESP32-S3 · virtual board · local flash</small><span id="status">Starting firmware…</span></header>
+<main><div class="layout">
+<section class="panel"><div class="body"><span class="label">Shot generator</span><h1>Click to fire</h1><p>Sensor arrivals travel through the firmware’s real scoring path.</p>
+<canvas id="target" width="1000" height="1000" aria-label="Virtual target; click to generate a shot"></canvas>
+<div class="row between legend"><span><i class="dot"></i>Expected <i class="dot actual"></i>Firmware result</span><span id="position">X 0.0 mm · Y 0.0 mm</span></div>
+<p class="note">Centre (0, 0) · X positive right · Y negative above centre · all positions in mm</p>
+<p class="note">Corner sensors: N ↖ · E ↗ · S ↘ · W ↙</p>
+<div class="metrics"><div class="metric"><strong id="shots">0</strong><span>shots reported</span></div><div class="metric"><strong id="error">—</strong><span>last error · mm</span></div><div class="metric"><strong id="time">0.0</strong><span>emulated seconds</span></div></div>
+<div class="row between"><span class="label">Last sensor arrivals</span><span id="speed" style="color:var(--muted);font-size:12px"></span></div>
+<table><thead><tr><th>Sensor</th><th>Arrival · µs</th><th>10 MHz ticks</th></tr></thead><tbody id="arrivals"><tr><td colspan="3">Click the target to begin.</td></tr></tbody></table>
+<div class="controls"><div class="row"><label>Temperature <input id="temperature" type="number" min="-20" max="40" value="20"> °C</label><label>Humidity <input id="humidity" type="number" min="0" max="100" value="50"> %</label><button id="environment">Apply</button></div>
+<div class="row"><label>Silence sensors:</label><label><input type="checkbox" value="N" class="missing"> N</label><label><input type="checkbox" value="E" class="missing"> E</label><label><input type="checkbox" value="S" class="missing"> S</label><label><input type="checkbox" value="W" class="missing"> W</label><label style="margin-left:auto">View <select id="extent"><option value="150">Target</option><option value="300">Adjacent lanes</option></select></label></div>
+<div class="row"><button id="center" class="primary">Fire centre</button><button id="session">New practice session</button><button id="end">End session</button><button id="reset">Reset ESP32</button></div></div>
+<div id="message" role="status"></div><p class="note"><b>Simulation boundary:</b> ROM/bootloader startup and the external oscillator POST are bypassed. Shots drive native pulse counters with virtual 10 MHz clock bursts. This does not validate analog electronics or acoustics.</p>
+</div></section>
+<section class="panel"><div class="framehead"><span class="label">Live firmware page</span><a id="open" target="_blank" rel="noopener">Open separately ↗</a></div><iframe id="firmware" title="The real freETarget athlete page"></iframe></section>
+</div><details><summary>Firmware console and board diagnostics</summary><div class="row" id="diagnostics"></div><pre id="logs"></pre></details></main>
+<script>
+"use strict";
+const $=id=>document.getElementById(id), canvas=$('target'), ctx=canvas.getContext('2d');
+let state=null, extent=150, busy=false, linked=false;
+const latest=()=>state?.expected?.filter(s=>s.status==='fired').at(-1);
+function clickPosition(event, rect, extent) {
+  return {x: ((event.clientX - rect.left) / rect.width - .5) * 2 * extent,
+          y: ((event.clientY - rect.top) / rect.height - .5) * 2 * extent};
+}
+function firmwarePosition(shot) {
+  return {x: shot.x, y: -shot.y};
+}
+function draw(){const w=canvas.width,h=w/2,scale=w/(extent*2);ctx.clearRect(0,0,w,w);ctx.save();ctx.translate(h,h);ctx.scale(scale,scale);
+ctx.fillStyle='#efe9d8';ctx.fillRect(-85,-85,170,170);ctx.fillStyle='#202422';ctx.beginPath();ctx.arc(0,0,59.5/2,0,Math.PI*2);ctx.fill();
+for(const d of [155.5,139.5,123.5,107.5,91.5,75.5,59.5,43.5,27.5,11.5]){ctx.strokeStyle=d<=59.5?'#d4d4c0':'#52564e';ctx.lineWidth=.25;ctx.beginPath();ctx.arc(0,0,d/2,0,Math.PI*2);ctx.stroke()}
+ctx.setLineDash([1.5,1.5]);ctx.strokeStyle='#42645c';ctx.lineWidth=.4;ctx.beginPath();ctx.arc(0,0,(state?.sensor_diameter_mm||232)/2,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
+for(const {name,x,y} of state?.sensor_positions||[]){ctx.fillStyle='#8ae0b5';ctx.strokeStyle='#173d31';ctx.lineWidth=.5;ctx.beginPath();ctx.arc(x,y,2,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.save();ctx.translate(x,y);ctx.font='5px system-ui';ctx.textAlign='center';ctx.lineWidth=1.2;ctx.strokeText(name,0,-5);ctx.fillText(name,0,-5);ctx.restore()}
+for(const s of state?.expected||[]){if(s.status!=='fired')continue;ctx.strokeStyle='#35a877';ctx.lineWidth=.6;ctx.beginPath();ctx.moveTo(s.x-2,s.y);ctx.lineTo(s.x+2,s.y);ctx.moveTo(s.x,s.y-2);ctx.lineTo(s.x,s.y+2);ctx.stroke()}
+const reports=(state?.events||[]).filter(e=>'shot'in e && !e.history);for(const s of reports){if(s.miss)continue;const p=firmwarePosition(s);ctx.strokeStyle='#f5a54e';ctx.lineWidth=.6;ctx.beginPath();ctx.arc(p.x,p.y,2.25,0,Math.PI*2);ctx.stroke()}ctx.restore();}
+async function post(path,body){const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error);return data}
+async function fire(x,y){if(busy||!state?.ready)return;busy=true;try{const missing=[...document.querySelectorAll('.missing:checked')].map(e=>e.value);const s=await post('shot',{x,y,missing});$('message').textContent=`Shot ${s.id} queued · X ${x.toFixed(1)} mm · Y ${y.toFixed(1)} mm`;}catch(e){$('message').textContent=e.message}finally{busy=false}}
+canvas.onpointermove=e=>{const p=clickPosition(e,canvas.getBoundingClientRect(),extent);$('position').textContent=`X ${p.x.toFixed(1)} mm · Y ${p.y.toFixed(1)} mm`};
+canvas.onclick=e=>{const p=clickPosition(e,canvas.getBoundingClientRect(),extent);fire(p.x,p.y)};
+$('center').onclick=()=>fire(0,0);$('extent').onchange=()=>{extent=+$('extent').value;draw()};
+for(const [id,path,body] of [['session','command',{SESSION:0}],['end','command',{SESSION_END:0}],['reset','reset',{}]])$(id).onclick=async()=>{try{await post(path,body);$('message').textContent=id==='reset'?'Resetting the ESP32…':'Command sent.'}catch(e){$('message').textContent=e.message}};
+$('environment').onclick=async()=>{try{await post('environment',{temperature:+$('temperature').value,humidity:+$('humidity').value});$('message').textContent='Environment updated.'}catch(e){$('message').textContent=e.message}};
+async function poll(){try{const r=await fetch('/api/status');state=await r.json();$('status').textContent=state.ready?'Connected · '+(state.armed?'armed':'rearming'):state.error||'Booting firmware…';$('status').className=state.ready?'up':'';
+if(state.ready&&!linked){$('firmware').src=state.page_url;$('open').href=state.page_url;linked=true}
+for(const id of ['session','end','reset'])$(id).disabled=!state.ready;$('center').disabled=!state.ready||!state.armed;
+const reports=state.events.filter(e=>'shot'in e&&!e.history);$('shots').textContent=reports.length;$('time').textContent=state.time_s.toFixed(1);
+const s=latest(),a=s?.result;$('error').textContent=s&&a&&!a.miss?Math.hypot(s.x-a.x,s.y-a.y).toFixed(3):'—';$('speed').textContent=state.speed_m_s.toFixed(2)+' m/s';
+if(s){$('arrivals').replaceChildren(...s.arrivals_ns.map((n,i)=>{const tr=document.createElement('tr');for(const value of ['NESW'[i],(n/1000).toFixed(2),n/100]){const td=document.createElement('td');td.textContent=value;tr.append(td)}return tr}))}
+$('logs').textContent=state.logs.join('\n');$('diagnostics').textContent=`Sensor reads: ${state.sensor_reads} · DAC writes: ${state.dac_writes} · Late events: ${state.late_events} (max ${state.max_lateness_ns} ns) · Dropped events: ${state.dropped_events} · Dropped broadcasts: ${state.broadcasts_dropped}`;draw();}catch(e){$('status').textContent='Dashboard connection lost'}setTimeout(poll,500)}draw();poll();
+</script></html>

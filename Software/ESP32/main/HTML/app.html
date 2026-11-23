@@ -27,16 +27,61 @@ main { padding: 16px; }
 .banner { background: #3b3220; border: 1px solid #6b5a2c; color: var(--amber); padding: 8px 12px; border-radius: 6px; margin-bottom: 12px;
   display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 .view { display: grid; grid-template-columns: minmax(0, min(78vh, 58vw)) minmax(300px, 1fr); gap: 20px; }
+.scoreboard { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) 190px; gap: 16px; }
+.scoreboard h2 { font-size: 16px; margin: 0 0 4px; }
+.scoreboard .hint { margin: 0 0 8px; font-size: 12px; color: var(--muted); }
+.board-scroll { overflow: auto; max-height: 250px; border: 1px solid var(--line); border-radius: 8px; }
+.series-board { width: 100%; min-width: 650px; border-collapse: separate; border-spacing: 0; font-variant-numeric: tabular-nums; font-size: 14px; }
+.series-board th, .series-board td { padding: 5px 6px; text-align: center; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+.series-board thead th { position: sticky; top: 0; z-index: 2; background: #191b18; font-size: 12px; color: var(--muted); }
+.series-board th:first-child { position: sticky; left: 0; z-index: 1; background: var(--panel); text-align: left; white-space: nowrap; }
+.series-board thead th:first-child { z-index: 3; background: #191b18; }
+.series-board tr.selected > * { background: #1c3850; }
+.series-board button { padding: 2px 3px; border: 0; background: transparent; border-radius: 3px; font-size: inherit; }
+.series-board .newest { color: var(--red); font-weight: 700; }
+.series-board .miss { color: var(--amber); }
+.series-board .picked { outline: 1px solid var(--amber); }
+.series-board .empty { color: var(--muted); }
+.series-board .sum { font-weight: 700; }
+.timing { border: 1px solid var(--line); border-radius: 8px; padding: 12px; background: var(--panel); display: grid; align-content: center; gap: 4px; }
+.timing .label { color: var(--muted); font-size: 12px; }
+.wall-clock { font-size: clamp(22px, 3vw, 30px); font-weight: 700; font-variant-numeric: tabular-nums; }
 @media (max-width: 860px) { .view { grid-template-columns: 1fr; } }
+@media (max-width: 700px) { .scoreboard { grid-template-columns: 1fr; } .timing { grid-template-columns: 1fr 1fr; align-items: center; } .timing .session-timer { grid-column: 2; grid-row: 1 / 3; } }
 .target { width: 100%; aspect-ratio: 1; display: block; background: #111; border-radius: 6px; touch-action: manipulation; }
 .tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: center; }
 .tools .what { color: var(--muted); margin-left: 4px; }
+.tools select { min-width: 0; max-width: 100%; }
+.tools .zoom-tools { display: flex; gap: 6px; align-items: center; margin-left: auto; }
+.series-summary { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px; margin: 10px 0; }
+.series-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px; }
+.series-heading h2 { margin: 0; font-size: 18px; }
+.series-heading span { color: var(--muted); font-size: 14px; }
+.score-totals { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 8px; font-variant-numeric: tabular-nums; }
+.score-totals span { display: block; color: var(--muted); font-size: 13px; }
+.score-totals strong { display: block; font-size: 30px; }
+.centre { color: var(--cyan); margin: 8px 0 2px; font-variant-numeric: tabular-nums; }
+.series-picks { display: flex; gap: 6px; flex-wrap: wrap; margin: 8px 0; }
+.series-picks button { font-size: 13px; }
+.series-picks button[aria-pressed="true"] { border-color: var(--accent); background: #1f4f80; }
+.shot-table { width: 100%; border-collapse: collapse; font-size: 14px; font-variant-numeric: tabular-nums; }
+.shot-table th, .shot-table td { padding: 5px 6px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.shot-table th { color: var(--muted); font-size: 12px; font-weight: 500; }
+.shot-table th:first-child, .shot-table td:first-child { text-align: left; color: var(--muted); }
+.shot-table tr.newest .decimal { color: var(--red); font-weight: 700; }
+.shot-table tr.miss .decimal { color: var(--amber); }
+.shot-table tr.picked { background: #1f4f80; }
+.shot-table tr:not(.empty) { cursor: pointer; }
+.shot-table tr:not(.empty):hover { background: var(--panel); }
+.shot-table tr.empty { color: var(--muted); }
+.shot-table td:nth-child(4) { white-space: normal; }
+.latest .integer { font-size: 16px; color: var(--muted); }
 .clock { font-size: 20px; font-weight: 700; margin: 0 0 4px; font-variant-numeric: tabular-nums; }
 .clock.over { color: var(--red); }
 .ended { color: var(--amber); font-weight: 600; margin: 4px 0 8px; }
 h1 { margin: 0; font-size: 22px; }
 .sub { color: var(--muted); margin: 2px 0 10px; }
-.latest { display: flex; align-items: baseline; gap: 14px; min-height: 76px; }
+.latest { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; min-height: 76px; }
 .latest .n { color: var(--muted); font-size: 28px; font-weight: 700; }
 .latest .score { font-size: 64px; font-weight: 800; line-height: 1; color: var(--red); font-variant-numeric: tabular-nums; }
 .latest .arrow { font-size: 40px; }
@@ -48,18 +93,6 @@ h1 { margin: 0; font-size: 22px; }
 .breakdown { display: flex; gap: 4px; flex-wrap: wrap; margin: 6px 0 10px; }
 .breakdown span { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; font-size: 13px; font-variant-numeric: tabular-nums; }
 .breakdown b { color: var(--muted); font-weight: 500; margin-right: 4px; }
-.section { margin: 12px 0 4px; color: var(--muted); font-size: 14px; display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); }
-.section b { color: var(--fg); }
-ol.shots { list-style: none; padding: 0; margin: 0; columns: 2; column-gap: 24px; }
-@media (max-width: 500px) { ol.shots { columns: 1; } }
-ol.shots li { display: flex; gap: 10px; padding: 2px 4px; break-inside: avoid; font-variant-numeric: tabular-nums; cursor: pointer; border-radius: 4px; }
-ol.shots li:hover { background: var(--panel); }
-ol.shots li .n { width: 2.6em; color: var(--muted); }
-ol.shots li .d { width: 3.4em; font-weight: 700; }
-ol.shots li .t { color: var(--muted); font-size: 13px; margin-left: auto; }
-ol.shots li.newest .d { color: var(--red); }
-ol.shots li.miss .d { color: var(--amber); }
-ol.shots li.picked { outline: 1px solid var(--accent); }
 .sessions { display: grid; gap: 8px; max-width: 720px; }
 .sessions button { text-align: left; display: grid; gap: 2px; padding: 10px 12px; }
 .sessions small { color: var(--muted); }
@@ -75,18 +108,27 @@ dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top
 @media print {
   :root { color-scheme: light; }
   html, body { background: #fff; color: #000; }
-  header, .tools, .actions, .banner, #liveonly, .latest, dialog { display: none !important; }
+  header, .tools, .actions, .banner, #liveonly, .latest, #latestLabel, .series-picks, dialog { display: none !important; }
   #printhead { display: block; margin-bottom: 8px; }
   main { padding: 0; }
   .view { grid-template-columns: 9cm 1fr; gap: 12px; }
+  .scoreboard { display: block; }
+  .board-scroll { overflow: visible; max-height: none; }
+  .series-board { min-width: 0; font-size: 9px; }
+  .series-board th, .series-board td { padding: 3px; }
+  .series-board thead th, .series-board th:first-child { position: static; background: #fff; color: #000; }
+  .series-board tr.selected > * { background: #fff; }
+  .series-board button { color: #000; }
+  .timing { display: none; }
   .target { background: #fff; }
-  .muted, .sub, .section, ol.shots li .n, ol.shots li .t, .breakdown b { color: #444; }
-  .section b, .clock { color: #000; }
+  .muted, .sub, .shot-table th, .shot-table td:first-child, .score-totals span, .breakdown b { color: #444; }
+  .clock, .score-totals strong { color: #000; }
   .clock { display: none; }
-  .stats { color: #000; }
+  .stats, .centre { color: #000; }
+  .series-summary { background: #fff; border-color: #999; }
   .breakdown span { background: #fff; border-color: #999; }
-  ol.shots li .d, ol.shots li.newest .d { color: #000; }
-  ol.shots { columns: 2; }
+  .shot-table tr.newest .decimal { color: #000; }
+  .shot-table tr.picked { background: transparent; }
 }
 </style>
 </head>
@@ -105,27 +147,57 @@ dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top
     <div class="sessions" id="sessions"></div>
   </section>
   <section id="main" class="view">
-    <div>
-      <svg id="target" class="target" xmlns="http://www.w3.org/2000/svg"></svg>
-      <div class="tools">
-        <button id="prev" title="Previous series (left arrow)">◀</button>
-        <button id="next" title="Next series (right arrow)">▶</button>
-        <span class="what" id="what"></span>
-        <button id="zoom" title="Zoom (Z)" style="margin-left:auto"></button>
+    <section class="scoreboard" aria-label="Series scores and clock">
+      <div>
+        <h2>Series scores</h2>
+        <p class="hint">Scored series · decimal shot scores · select a series or shot to review it</p>
+        <div class="board-scroll" id="boardScroll"><table class="series-board" id="seriesBoard" aria-label="Ten-shot series overview"></table></div>
       </div>
+      <aside class="timing" aria-label="Clock">
+        <span class="label">Local time</span>
+        <time class="wall-clock" id="wallClock"></time>
+        <div class="session-timer"><span class="label">Live session timer</span><p class="clock" id="clock"></p></div>
+      </aside>
+    </section>
+    <div>
+      <svg id="target" class="target" role="img" aria-label="Selected series target" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="tools">
+        <button id="prev" title="Previous series (left arrow)" aria-label="Previous series">◀</button>
+        <select id="seriesView" aria-label="Series to display"></select>
+        <button id="next" title="Next series (right arrow)" aria-label="Next series">▶</button>
+        <button id="follow" title="Follow the latest series as shots arrive">Latest series</button>
+        <span class="what" id="what"></span>
+        <div class="zoom-tools">
+          <button id="zoomOut" aria-label="Zoom out">−</button>
+          <select id="zoom" aria-label="Target zoom" title="Zoom (Z)">
+            <option value="0">Auto fit</option><option value="1">Full target</option>
+            <option value="2">Ring 4</option><option value="3">Ring 7</option><option value="4">Ring 9</option>
+          </select>
+          <button id="zoomIn" aria-label="Zoom in">+</button>
+        </div>
+      </div>
+      <p class="line muted" id="axes">Position in mm · Centre (0, 0) · X positive right · Y negative above centre</p>
     </div>
     <div>
       <div id="printhead"></div>
-      <p class="clock" id="clock"></p>
       <h1 id="title">Waiting for the target</h1>
       <p class="sub" id="sub"></p>
       <p class="ended hidden" id="ended"></p>
+      <p class="line muted" id="latestLabel">Last shot in series</p>
       <div class="latest" id="latest"></div>
+      <div class="series-summary">
+        <div class="series-heading"><h2 id="seriesTitle">Series 1</h2><span id="seriesCount">0 / 10 shots</span></div>
+        <div class="score-totals">
+          <div><span>Decimal total</span><strong id="decimalTotal">0.0</strong></div>
+          <div><span>Integer total</span><strong id="integerTotal">0</strong></div>
+        </div>
+        <p class="centre" id="centre">Average point: no hits yet</p>
+        <p class="stats" id="stats"></p>
+      </div>
       <p class="tally" id="tally"></p>
-      <p class="line" id="series"></p>
+      <div class="series-picks" id="series" aria-label="Series totals"></div>
       <p class="line muted" id="sighters"></p>
       <div class="breakdown" id="breakdown"></div>
-      <p class="stats" id="stats"></p>
       <div class="actions" id="liveonly">
         <button id="newSession" class="primary">New session…</button>
         <button id="mode" class="hidden"></button>
@@ -157,7 +229,7 @@ dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top
       <label>Sighting min <input name="sightMin" type="number" min="0" max="60"></label>
       <label>Match min <input name="matchMin" type="number" min="1" max="240"></label>
     </div>
-    <label class="check"><input name="decimal" type="checkbox"> Decimal totals</label>
+    <label class="check"><input name="decimal" type="checkbox"> Speak decimal scores</label>
     <p class="muted" style="font-size:13px">Shots already fired stay in the target's history.</p>
     <div class="buttons"><button value="cancel" formnovalidate>Cancel</button><button value="start" class="primary">Start</button></div>
   </form>
@@ -183,6 +255,7 @@ const FACES = {
 };
 const faceOf = (code) => FACES[(code | 0) & ~1] || FACES[100];
 const SIGHT = 2, MATCH = 4;
+const SERIES_SIZE = 10;
 const SVGNS = "http://www.w3.org/2000/svg";
 const $ = (id) => document.getElementById(id);
 
@@ -202,7 +275,7 @@ function score(face, s) {
 function arrow(s) {
   if (s.miss) return "";
   if (Math.hypot(s.x, s.y) < 0.5) return "•";
-  const a = Math.atan2(s.y, s.x) * 180 / Math.PI;               // 0 = right, 90 = up
+  const a = Math.atan2(-s.y, s.x) * 180 / Math.PI;              // Target coordinates: negative Y is up
   return ["→", "↗", "↑", "↖", "←", "↙", "↓", "↘"][Math.round(((a + 360) % 360) / 45) % 8];
 }
 const pad = (n) => String(n).padStart(2, "0");
@@ -228,7 +301,9 @@ function addEvent(d, m) {
     if (m.target) d.target = m.target;
     d.modes.push({ type: m.session_type, utc: m.utc, change: m.change, seq: m.seq });
   } else if ("shot" in m) {
-    d.shots.push({ seq: m.seq, fw: m.shot, type: m.session_type & ~1, x: m.x, y: m.y, miss: !!m.miss, utc: m.utc || 0, clock: m.clock });
+    // Firmware/journal coordinates are positive-up. Convert once at the
+    // boundary; drawing, text, statistics and CSV all use negative-up Y.
+    d.shots.push({ seq: m.seq, fw: m.shot, type: m.session_type & ~1, x: m.x, y: -m.y, miss: !!m.miss, utc: m.utc || 0, clock: m.clock });
     if (m.athelete) d.athlete = m.athelete;
   }
 }
@@ -238,7 +313,7 @@ function analyse(d) {                                            // Number the s
   for (const s of d.shots) {
     Object.assign(s, score(face, s));
     if (s.type === SIGHT) { sighters.push(s); s.label = "S" + sighters.length; }
-    else { record.push(s); s.label = String(record.length); s.series = Math.floor((record.length - 1) / 10); }
+    else { record.push(s); s.label = String(record.length); s.series = Math.floor((record.length - 1) / SERIES_SIZE); }
   }
   const series = [];
   for (const s of record) (series[s.series] ||= []).push(s);
@@ -246,8 +321,7 @@ function analyse(d) {                                            // Number the s
 }
 const total = (shots) => ({ int: shots.reduce((a, s) => a + s.int, 0), dec: Math.round(shots.reduce((a, s) => a + s.dec, 0) * 10) / 10,
   x: shots.filter((s) => s.inner).length });
-const totalText = (t, dec) => dec ? `${t.dec.toFixed(1)}` : `${t.int}`;
-const totalBoth = (t, dec) => dec ? `${t.dec.toFixed(1)} (${t.int})` : `${t.int} (${t.dec.toFixed(1)})`;
+const labelledTotal = (t) => `Decimal ${t.dec.toFixed(1)} · Integer ${t.int}`;
 function groupStats(shots) {
   const hit = shots.filter((s) => !s.miss);
   if (!hit.length) return null;
@@ -276,18 +350,31 @@ const shown = () => past || live;
 function views(a) {
   const v = [];
   if (a.sighters.length) v.push({ label: "Sighters", shots: a.sighters, sighter: true });
-  a.series.forEach((s, i) => v.push({ label: a.match ? `Series ${i + 1}` : `Shots ${i * 10 + 1}–${i * 10 + s.length}`, shots: s }));
+  a.series.forEach((s, i) => v.push({ label: `Series ${i + 1}`, shots: s, series: i, first: i * SERIES_SIZE + 1, slots: SERIES_SIZE }));
+  if (!a.series.length && a.type !== SIGHT) v.push({ label: "Series 1", shots: [], series: 0, first: 1, slots: SERIES_SIZE });
   if (a.series.length > 1) v.push({ label: a.match ? "All match shots" : "All shots", shots: a.record });
-  if (!v.length) v.push({ label: a.type === SIGHT ? "Sighters" : "No shots yet", shots: [], sighter: a.type === SIGHT });
+  if (!v.length) v.push(a.type === SIGHT ? { label: "Sighters", shots: [], sighter: true }
+    : { label: "Series 1", shots: [], series: 0, first: 1, slots: SERIES_SIZE });
   return v;
 }
 function autoView(a, v) {                                        // Follow the shooting
   if (a.type === SIGHT) return v.findIndex((x) => x.sighter) >= 0 ? v.findIndex((x) => x.sighter) : 0;
-  if (!a.match && a.series.length > 1) return v.length - 1;     // Practice: everything
-  const last = a.series.length - 1;
-  const i = v.findIndex((x) => x.label === `Series ${last + 1}` || x.label.startsWith(`Shots ${last * 10 + 1}`));
+  const last = Math.max(0, a.series.length - 1);
+  const i = v.findIndex((x) => x.series === last);
   return i >= 0 ? i : v.length - 1;
 }
+const viewIndex = (a, v) => view === null ? (past ? 0 : autoView(a, v)) : Math.max(0, Math.min(view, v.length - 1));
+function moveView(delta) {
+  const a = analyse(shown()), v = views(a);
+  view = Math.max(0, Math.min(viewIndex(a, v) + delta, v.length - 1));
+  picked = null;
+  render();
+}
+function averageText(g) {
+  if (!g) return "Average point: no hits yet";
+  return `Average point: X ${formatMm(g.cx)} mm · Y ${formatMm(g.cy)} mm`;
+}
+const formatMm = (n) => Math.abs(n) < 0.05 ? "0.0" : `${n > 0 ? "+" : ""}${n.toFixed(1)}`;
 
 /*
  * ---- Drawing ----
@@ -305,18 +392,31 @@ function svg(parent, tag, attrs, text) {
   parent.append(e);
   return e;
 }
-const ZOOMS = ["Auto", "Card", "Ring 4", "Ring 7"];
-function viewHalf(face, shots) {
+const ZOOMS = ["Auto fit", "Full target", "Ring 4", "Ring 7", "Ring 9"];
+function viewHalf(face, shots, level = prefs.zoom) {
   const c = face.caliber;
-  switch (prefs.zoom) {
+  switch (level) {
     case 1: return face.card / 2;
     case 2: return face.rings[3] / 2 + c;
     case 3: return face.rings[6] / 2 + c;
+    case 4: return face.rings[8] / 2 + c;
   }
   const hit = shots.filter((s) => !s.miss);
   let m = face.rings[8] / 2 + c * 2;                            // At least ring 9
   for (const s of hit) m = Math.max(m, Math.abs(s.x) + c * 1.5, Math.abs(s.y) + c * 1.5);
   return Math.min(m, face.card / 2);
+}
+function zoomChoice(direction, face, shots) {
+  const current = viewHalf(face, shots);
+  const choices = [1, 2, 3, 4].map((level) => ({ level, half: viewHalf(face, shots, level) }));
+  const smaller = choices.filter((x) => x.half < current - 0.01).sort((a, b) => b.half - a.half);
+  const larger = choices.filter((x) => x.half > current + 0.01).sort((a, b) => a.half - b.half);
+  return (direction > 0 ? smaller : larger)[0]?.level;
+}
+function setZoom(level) {
+  prefs.zoom = level;
+  savePrefs();
+  render();
 }
 function drawTarget(target, face, shots, opts) {
   target.replaceChildren();
@@ -346,16 +446,19 @@ function drawTarget(target, face, shots, opts) {
   shots.forEach((s) => {
     if (s.miss) return;
     const newest = s === opts.newest, pick = s === picked;
-    svg(target, "circle", { cx: s.x, cy: -s.y, r, fill: newest ? "#ff3c3c" : "#2f8cff", "fill-opacity": 0.88,
+    svg(target, "circle", { cx: s.x, cy: s.y, r, fill: newest ? "#ff3c3c" : "#2f8cff", "fill-opacity": 0.88,
       stroke: pick ? "#ffaa00" : "#ffffff", "stroke-width": pick ? r * 0.25 : line });
-    svg(target, "text", { x: s.x, y: -s.y, "font-size": r * (s.label.length > 2 ? 0.8 : 1), "text-anchor": "middle",
+    svg(target, "text", { x: s.x, y: s.y, "font-size": r * (s.label.length > 2 ? 0.8 : 1), "text-anchor": "middle",
       "dominant-baseline": "central", fill: "#fff", "font-weight": 700, "font-family": "system-ui, sans-serif" }, s.label);
   });
   const g = groupStats(shots);
-  if (g && g.n > 1) {                                            // Group centre
+  target.setAttribute("aria-label", `${opts.label || "Target"}. ${averageText(g)}`);
+  if (g) {                                                      // Average of this view's valid hits, including a single hit
     const arm = half / 30;
+    const cross = svg(target, "g", { class: "average-point", "data-x": g.cx, "data-y": g.cy });
+    svg(cross, "title", {}, averageText(g));
     for (const [w, c] of [[line * 6, "#20221f"], [line * 2.5, "#00d2e6"]]) {
-      svg(target, "path", { d: `M${g.cx - arm} ${-g.cy}H${g.cx + arm}M${g.cx} ${-g.cy - arm}V${-g.cy + arm}`, stroke: c,
+      svg(cross, "path", { d: `M${g.cx - arm} ${g.cy}H${g.cx + arm}M${g.cx} ${g.cy - arm}V${g.cy + arm}`, stroke: c,
         "stroke-width": w, "stroke-linecap": "round" });
     }
   }
@@ -365,21 +468,27 @@ function drawTarget(target, face, shots, opts) {
  * ---- Rendering the page ----
  */
 function render() {
-  const d = shown(), a = analyse(d), dec = decimalFor(d.target), v = views(a);
-  if (view === null || view >= v.length) view = past ? 0 : autoView(a, v);
-  const cur = v[view];
+  const d = shown(), a = analyse(d), v = views(a);
+  const index = viewIndex(a, v), cur = v[index];
   const newest = !past && d.shots.length ? d.shots[d.shots.length - 1] : null;
+  renderSeriesBoard(a, v, index, newest);
 
   $("banner").classList.toggle("hidden", !past);
   if (past) $("bannerText").textContent = pastLoading ? `Loading session ${past.session}…`
     : `Past session ${past.session} · ${dateTime(past.modes[0]?.utc || past.shots[0]?.utc)}`;
   $("liveonly").classList.toggle("hidden", !!past);
 
-  drawTarget($("target"), a.face, cur.shots, { sighter: cur.sighter, newest });
-  $("what").textContent = cur.label;
-  $("prev").disabled = view <= 0;
-  $("next").disabled = view >= v.length - 1;
-  $("zoom").textContent = "Zoom: " + ZOOMS[prefs.zoom];
+  drawTarget($("target"), a.face, cur.shots, { sighter: cur.sighter, newest, label: cur.label });
+  $("what").textContent = cur.slots ? `Shots ${cur.first}–${cur.first + cur.slots - 1}` : cur.label;
+  $("seriesView").replaceChildren(...v.map((entry, i) => el("option", { value: i }, entry.label)));
+  $("seriesView").value = String(index);
+  $("prev").disabled = index <= 0;
+  $("next").disabled = index >= v.length - 1;
+  $("follow").classList.toggle("hidden", !!past);
+  $("follow").disabled = view === null;
+  $("zoom").value = String(prefs.zoom);
+  $("zoomIn").disabled = zoomChoice(1, a.face, cur.shots) === undefined;
+  $("zoomOut").disabled = zoomChoice(-1, a.face, cur.shots) === undefined;
 
   const kind = a.type === SIGHT ? "Sighters" : a.type === MATCH ? "Match" : "Practice";
   $("title").textContent = d.session ? `${a.face.name} · ${kind}` : "No session yet";
@@ -389,29 +498,42 @@ function render() {
 
   const latest = $("latest");
   latest.replaceChildren();
-  const last = past ? null : d.shots[d.shots.length - 1];
+  $("latestLabel").textContent = `Last shot · ${cur.label.toLowerCase()}`;
+  const last = cur.shots[cur.shots.length - 1];
   if (last) latest.append(el("span", { class: "n" }, "#" + last.label),
-    el("span", { class: "score" }, last.miss ? "M" : (dec ? last.dec.toFixed(1) : last.int + "") + (last.inner ? "*" : "")),
+    el("span", { class: "score" }, last.miss ? "M" : last.dec.toFixed(1) + (last.inner ? "*" : "")),
+    el("span", { class: "integer" }, `${last.int} integer`),
     el("span", { class: "arrow" }, arrow(last)));
+
+  const selectedTotal = total(cur.shots);
+  $("seriesTitle").textContent = cur.label;
+  $("seriesCount").textContent = cur.slots ? `${cur.shots.length} / ${cur.slots} shots` : `${cur.shots.length} shots`;
+  $("decimalTotal").textContent = selectedTotal.dec.toFixed(1);
+  $("integerTotal").textContent = String(selectedTotal.int);
 
   const t = total(a.record);
   if (a.match) {
     const of = prefs.shots;
-    $("tally").textContent = a.record.length ? `Match ${a.record.length}/${of}: ${totalBoth(t, dec)}` + (t.x ? ` · ${t.x}×` : "") : "Match not started";
+    $("tally").textContent = `Match total · ${a.record.length}/${of} shots · ${labelledTotal(t)}` + (t.x ? ` · ${t.x}×` : "");
   } else {
-    $("tally").textContent = a.record.length ? `${a.record.length} shot${a.record.length > 1 ? "s" : ""}: ${totalBoth(t, dec)}` + (t.x ? ` · ${t.x}×` : "") : "";
+    $("tally").textContent = `Session total · ${a.record.length} shots · ${labelledTotal(t)}` + (t.x ? ` · ${t.x}×` : "");
   }
-  $("series").textContent = a.series.length ? "Series: " + a.series.map((s) => totalText(total(s), dec)).join("  ") : "";
+  $("series").replaceChildren(...v.filter((entry) => entry.series !== undefined).map((entry) => {
+    const i = v.indexOf(entry), t = total(entry.shots);
+    const button = el("button", { "aria-pressed": String(index === i), title: labelledTotal(t) }, `${entry.label} · ${t.dec.toFixed(1)} dec · ${t.int} int`);
+    button.onclick = () => { view = i; picked = null; render(); };
+    return button;
+  }));
   $("sighters").textContent = a.sighters.length ? `${a.sighters.length} sighter${a.sighters.length > 1 ? "s" : ""}` : "";
 
   const counts = {};
-  for (const s of a.record) { const k = s.miss ? "M" : s.inner ? "X" : String(s.int); counts[k] = (counts[k] || 0) + 1; }
+  for (const s of cur.shots) { const k = s.miss ? "M" : s.inner ? "X" : String(s.int); counts[k] = (counts[k] || 0) + 1; }
   $("breakdown").replaceChildren(...["X", "10", "9", "8", "7", "6", "5", "4", "3", "2", "1", "0", "M"].filter((k) => counts[k])
     .map((k) => { const sp = el("span"); sp.append(el("b", {}, k), String(counts[k])); return sp; }));
 
   const g = groupStats(cur.shots);
-  $("stats").textContent = g ? [`${cur.label}: centre ${Math.abs(g.cx).toFixed(1)} mm ${g.cx >= 0 ? "right" : "left"}, ${Math.abs(g.cy).toFixed(1)} mm ${g.cy >= 0 ? "high" : "low"}`,
-    g.n > 1 ? `group ${g.spread.toFixed(1)} mm, mean radius ${g.mean.toFixed(1)} mm` : ""].filter(Boolean).join(" · ") : "";
+  $("centre").textContent = averageText(g);
+  $("stats").textContent = g && g.n > 1 ? `Group ${g.spread.toFixed(1)} mm · Mean radius ${g.mean.toFixed(1)} mm · ${g.n} hits` : "";
 
   const ended = $("ended");
   ended.classList.toggle("hidden", !d.ended);
@@ -424,50 +546,100 @@ function render() {
   mode.textContent = a.type === MATCH ? "Back to sighters" : "Start match";
 
   $("sound").textContent = "Sound: " + (prefs.sound ? "on" : "off");
-  renderList(a, dec, newest);
+  renderList(cur, newest);
   renderClock();
 }
 
-function renderList(a, dec, newest) {
+function renderSeriesBoard(a, v, index, newest) {
+  const head = el("thead"), headings = el("tr");
+  for (const text of ["Series", ...Array.from({ length: SERIES_SIZE }, (_, i) => String(i + 1)), "Integer total", "Decimal total"]) {
+    headings.append(el("th", { scope: "col" }, text));
+  }
+  head.append(headings);
+  const body = el("tbody");
+  const entries = v.map((entry, i) => ({ ...entry, index: i })).filter(entry => entry.series !== undefined);
+  // During sighting, show the upcoming scored series separately from sighters.
+  if (!entries.length) entries.push({ label: "Series 1", shots: [], series: 0, index: -1 });
+  for (const entry of entries) {
+    const row = el("tr", { class: index === entry.index ? "selected" : "", "data-series": entry.series + 1 });
+    const label = el("th", { scope: "row" });
+    const choose = el("button", { "aria-pressed": String(index === entry.index), title: `View ${entry.label.toLowerCase()}` }, entry.label);
+    choose.disabled = entry.index < 0;
+    choose.onclick = () => { view = entry.index; picked = null; render(); };
+    label.append(choose);
+    row.append(label);
+    for (let i = 0; i < SERIES_SIZE; i++) {
+      const shot = entry.shots[i];
+      const cell = el("td", { class: shot ? "" : "empty" });
+      if (shot) {
+        const button = el("button", {
+          class: [shot === newest ? "newest" : "", shot.miss ? "miss" : "", shot === picked ? "picked" : ""].filter(Boolean).join(" "),
+          "aria-label": `Shot ${shot.label}: ${shot.miss ? "miss" : `${shot.dec.toFixed(1)} decimal, ${shot.int} integer`}`,
+        }, shot.miss ? "M" : shot.dec.toFixed(1) + (shot.inner ? "*" : ""));
+        button.onclick = () => { view = entry.index; picked = shot; render(); };
+        cell.append(button);
+      } else cell.textContent = "—";
+      row.append(cell);
+    }
+    const t = total(entry.shots);
+    row.append(el("td", { class: "sum" }, String(t.int)), el("td", { class: "sum" }, t.dec.toFixed(1)));
+    body.append(row);
+  }
+  $("seriesBoard").replaceChildren(head, body);
+  if (!past && view === null && a.type !== SIGHT) $("boardScroll").scrollTop = $("boardScroll").scrollHeight;
+}
+
+function renderList(cur, newest) {
   const list = $("list");
   list.replaceChildren();
-  const block = (title, totalTextValue, shots) => {
-    const h = el("div", { class: "section" });
-    h.append(el("span", {}, title), el("b", {}, totalTextValue));
-    const ol = el("ol", { class: "shots" });
-    for (const s of shots) {
-      const li = el("li", { class: (s === newest ? "newest " : "") + (s.miss ? "miss " : "") + (s === picked ? "picked" : "") });
-      li.append(el("span", { class: "n" }, s.label), el("span", { class: "d" }, s.miss ? "M" : (dec ? s.dec.toFixed(1) : s.int + " ") + (s.inner ? "*" : "")),
-        el("span", {}, arrow(s)), el("span", { class: "t" }, dec ? "" : s.dec.toFixed(1)), el("span", { class: "t" }, clockTime(s.utc)));
-      li.onclick = () => { picked = picked === s ? null : s; const v = views(a); const i = v.findIndex((x) => x.shots.includes(s)); if (i >= 0) view = i; render(); };
-      ol.append(li);
+  const table = el("table", { class: "shot-table", "aria-label": `${cur.label} scores` });
+  const head = el("thead"), headings = el("tr");
+  for (const text of ["Shot", "Decimal", "Integer", "X · mm", "Y · mm", "Dir."]) headings.append(el("th", { scope: "col" }, text));
+  head.append(headings);
+  const body = el("tbody");
+  for (let i = 0; i < (cur.slots || cur.shots.length); i++) {
+    const s = cur.shots[i];
+    const row = el("tr", { class: !s ? "empty" : (s === newest ? "newest " : "") + (s.miss ? "miss " : "") + (s === picked ? "picked" : "") });
+    row.append(el("td", {}, s?.label || String(cur.first + i)),
+      el("td", { class: "decimal" }, !s ? "—" : s.miss ? "M" : s.dec.toFixed(1) + (s.inner ? "*" : "")),
+      el("td", {}, s ? String(s.int) : "—"),
+      el("td", {}, !s || s.miss ? "—" : formatMm(s.x)),
+      el("td", {}, !s || s.miss ? "—" : formatMm(s.y)),
+      el("td", { "aria-label": "Direction from target centre" }, s ? arrow(s) : ""));
+    if (s) {
+      row.tabIndex = 0;
+      row.onclick = () => { picked = picked === s ? null : s; render(); };
+      row.onkeydown = (event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); row.onclick(); } };
     }
-    list.append(h, ol);
-  };
-  for (let i = a.series.length - 1; i >= 0; i--) {
-    block(a.match ? `Series ${i + 1}` : `Shots ${i * 10 + 1}–${i * 10 + a.series[i].length}`, totalBoth(total(a.series[i]), dec), a.series[i]);
+    body.append(row);
   }
-  if (a.sighters.length) block("Sighters", "", a.sighters);
+  table.append(head, body);
+  list.append(table);
 }
 
 function renderClock() {
   const box = $("clock");
-  const d = shown();
+  const now = Date.now() / 1000;
+  $("wallClock").textContent = clockTime(now);
+  $("wallClock").dateTime = new Date(now * 1000).toISOString();
+  // Keep the live timer visible while reviewing an earlier series or session.
+  const d = live;
   box.classList.remove("over");
-  if (past || !d.session || d.ended) { box.textContent = ""; return; }
-  const type = sessionType(d), now = Date.now() / 1000;
+  if (!d.session) { box.textContent = "No active session"; return; }
+  if (d.ended) { box.textContent = "Session ended"; return; }
+  const type = sessionType(d);
   const since = (t) => [...d.modes].reverse().find((m) => m.type === t && m.utc)?.utc;
-  let text = "";
+  let text = "Session start time unavailable";
   if (type === SIGHT && since(SIGHT)) {
     const left = prefs.sightMin * 60 - (now - since(SIGHT));
-    text = left > 0 ? `Sighting ${hms(left)}` : "Sighting time over";
+    text = left > 0 ? `Sighting ${hms(left)} left` : "Sighting time over";
     box.classList.toggle("over", left <= 0);
   } else if (type === MATCH && since(MATCH)) {
     const start = d.modes.find((m) => m.type === MATCH && m.utc).utc, left = prefs.matchMin * 60 - (now - start);
-    text = left > 0 ? `Match ${hms(left)}` : "Match time over";
+    text = left > 0 ? `Match ${hms(left)} left` : "Match time over";
     box.classList.toggle("over", left <= 0);
-  } else if (d.modes[0]?.utc) {
-    text = `Practice ${hms(now - d.modes[0].utc)}`;
+  } else if (type !== SIGHT && type !== MATCH && d.modes.find(m => m.utc)?.utc) {
+    text = `Practice ${hms(now - d.modes.find(m => m.utc).utc)} elapsed`;
   }
   box.textContent = text;
 }
@@ -531,12 +703,12 @@ function handle(text) {
     if (m.session !== live.session && ("shot" in m || m.change === "new")) {
       live = newSession(m.session);
       live.target = m.target || hello?.target || 100;
-      view = null;
+      if (!past) { view = null; picked = null; }
     }
     addEvent(live, m);
     lastSeq = m.seq;
     if (caughtUp) {
-      if ("shot" in m) { view = null; picked = null; analyse(live); speak(live.shots[live.shots.length - 1]); }
+      if ("shot" in m) { if (!past && view === null) picked = null; analyse(live); speak(live.shots[live.shots.length - 1]); }
       if (!past) render();
     }
   }
@@ -585,9 +757,16 @@ $("backLive").onclick = () => { past = null; view = null; picked = null; closeSe
 /*
  * ---- Controls ----
  */
-$("prev").onclick = () => { if (view > 0) { view--; picked = null; render(); } };
-$("next").onclick = () => { view++; picked = null; render(); };
-$("zoom").onclick = () => { prefs.zoom = (prefs.zoom + 1) % ZOOMS.length; savePrefs(); render(); };
+$("prev").onclick = () => moveView(-1);
+$("next").onclick = () => moveView(1);
+$("seriesView").onchange = () => { view = Number($("seriesView").value); picked = null; render(); };
+$("follow").onclick = () => { view = null; picked = null; render(); };
+$("zoom").onchange = () => setZoom(Number($("zoom").value));
+for (const [id, direction] of [["zoomIn", 1], ["zoomOut", -1]]) $(id).onclick = () => {
+  const a = analyse(shown()), v = views(a), cur = v[viewIndex(a, v)];
+  const level = zoomChoice(direction, a.face, cur.shots);
+  if (level !== undefined) setZoom(level);
+};
 $("sound").onclick = () => {
   prefs.sound = !prefs.sound; savePrefs();
   if (prefs.sound && window.speechSynthesis) speechSynthesis.speak(new SpeechSynthesisUtterance("sound on"));
@@ -649,7 +828,7 @@ dialog.onclose = () => {
 
 document.addEventListener("keydown", (e) => {
   if (e.target.closest("input, select, textarea, dialog")) return;
-  if (e.key === "z" || e.key === "Z") $("zoom").click();
+  if (e.key === "z" || e.key === "Z") setZoom((prefs.zoom + 1) % ZOOMS.length);
   else if (e.key === "ArrowLeft") $("prev").click();
   else if (e.key === "ArrowRight" && !$("next").disabled) $("next").click();
   else if (e.key === "s" || e.key === "S") $("sound").click();

@@ -1,0 +1,156 @@
+"""Fast checks; the separate smoke command exercises the emulated CPU."""
+import collections
+import math
+import socket
+import struct
+import unittest
+
+import protocol as wire
+from board import Board, CLOCK_PIN, crc8
+from physics import Target, speed_of_sound
+from websocket import WebSocket
+
+
+class PhysicsTests(unittest.TestCase):
+    def test_centre_symmetry_and_units(self):
+        arrivals = Target().arrivals(0, 0)
+        self.assertEqual(len(set(arrivals)), 1)
+        self.assertAlmostEqual(arrivals[0] / 1000, 116 / speed_of_sound(), delta=0.05)
+        self.assertTrue(0.343 < speed_of_sound() < 0.345)
+
+    def test_cardinal_directions_and_rotation(self):
+        north, east, south, west = Target(angle_deg=0).arrivals(30, 0)
+        self.assertEqual(north, south)
+        self.assertLess(east, north)
+        self.assertGreater(west, north)
+        self.assertEqual(Target(angle_deg=90).arrivals(0, -30), [north, east, south, west])
+        self.assertLess(Target().arrivals(0, -30)[0], Target().arrivals(0, -30)[2])
+
+    def test_default_sensors_are_at_corners(self):
+        target = Target()
+        corner = 116 / math.sqrt(2)
+        expected = ((-corner, -corner), (corner, -corner), (corner, corner), (-corner, corner))
+        for sensor, name, (x, y) in zip(target.sensors(), "NESW", expected):
+            self.assertEqual(sensor["name"], name)
+            self.assertAlmostEqual(sensor["x"], x)
+            self.assertAlmostEqual(sensor["y"], y)
+            arrivals = target.arrivals(x, y)
+            self.assertEqual(arrivals.index(min(arrivals)), "NESW".index(name))
+            self.assertEqual(min(arrivals), 0)
+
+    def test_top_and_right_edge_arrivals_match_corner_layout(self):
+        n, e, s, w = Target().arrivals(0, -30)
+        self.assertEqual(n, e)
+        self.assertEqual(s, w)
+        self.assertLess(n, s)
+        n, e, s, w = Target().arrivals(30, 0)
+        self.assertEqual(e, s)
+        self.assertEqual(n, w)
+        self.assertLess(e, n)
+
+    def test_mirror_and_depth(self):
+        n, e, s, w = Target().arrivals(25, -40)
+        self.assertEqual(Target().arrivals(-25, 40), [s, w, n, e])
+        self.assertGreater(Target(depth_mm=10).arrivals(0, 0)[0], Target().arrivals(0, 0)[0])
+
+    def test_environment_changes_propagation(self):
+        self.assertGreater(speed_of_sound(30), speed_of_sound(10))
+        self.assertGreater(speed_of_sound(20, 90), speed_of_sound(20, 10))
+        self.assertLess(Target(temperature=30).arrivals(0, 0)[0], Target(temperature=10).arrivals(0, 0)[0])
+
+    def test_reject_invalid_inputs(self):
+        for value in (math.inf, math.nan, 1e308):
+            with self.assertRaises(ValueError):
+                Target().arrivals(value, 0)
+        for temperature, humidity in ((41, 50), (20, -1), (math.nan, 0)):
+            with self.assertRaises(ValueError):
+                speed_of_sound(temperature, humidity)
+
+
+class FakeSocket:
+    def __init__(self, chunks):
+        self.chunks = collections.deque(chunks)
+        self.sent = bytearray()
+
+    def recv(self, size):
+        chunk = self.chunks.popleft() if self.chunks else b""
+        if isinstance(chunk, Exception):
+            raise chunk
+        if len(chunk) > size:
+            self.chunks.appendleft(chunk[size:])
+        return chunk[:size]
+
+    def sendall(self, data):
+        self.sent.extend(data)
+
+
+class ProtocolTests(unittest.TestCase):
+    def test_fragmented_transport_and_nested_message(self):
+        data = wire.gpio(6, True, 123456789012)
+        frame = struct.pack("<H", 4) + b"GPIO" + data
+        stream = struct.pack("<I", len(frame)) + frame
+        topic, result = wire.receive(FakeSocket(bytes([b]) for b in stream))
+        self.assertEqual(topic, "GPIO")
+        self.assertEqual(result[1], 123456789012)
+        self.assertEqual(wire.fields(result[6]), {1: 6, 2: 1})
+
+    def test_refuse_malformed_or_unbounded_data(self):
+        for data in (b"\x00", b"\x80" * 11, b"\x12\x05a", b"\x0b"):
+            with self.assertRaises(ValueError):
+                wire.fields(data)
+        with self.assertRaises(ValueError):
+            wire.receive(FakeSocket([struct.pack("<I", wire.MAX_FRAME + 1)]))
+        for widths in ([], [0], [50] * 513):
+            with self.assertRaises(ValueError):
+                wire.pulses(8, 100, widths)
+
+    def test_timeout_does_not_lose_partial_websocket_frame(self):
+        ws = WebSocket.__new__(WebSocket)
+        ws.buffer, ws.fragments = bytearray(), bytearray()
+        ws.sock = FakeSocket([b'\x81\x0a{"sh', socket.timeout(), b'ot":1}'])
+        with self.assertRaises(socket.timeout):
+            ws.receive()
+        self.assertEqual(ws.receive(), {"shot": 1})
+
+    def test_fragmented_message_with_ping(self):
+        ws = WebSocket.__new__(WebSocket)
+        ws.buffer, ws.fragments = bytearray(), bytearray()
+        ws.sock = FakeSocket([b'\x01\x05{"x":\x89\x01p\x80\x021}'])
+        self.assertEqual(ws.receive(), {"x": 1})
+        self.assertTrue(ws.sock.sent)  # A masked pong was sent.
+
+
+class BoardTests(unittest.TestCase):
+    def test_gate_order_and_clock_queue_budget(self):
+        board = Board(0)
+        board.attached.set()
+        board.armed = True
+        board.now_ns = 1000000
+        sent = []
+        board.send = lambda data: sent.append(wire.fields(data))
+        shot = board.fire(30, -20)
+        board.next_quantum()
+        gates = [(m[1], wire.fields(m[6])[1]) for m in sent if 6 in m]
+        self.assertEqual([pin for _, pin in sorted(gates)], [6, 7, 5, 15])
+        self.assertTrue(all(at > board.now_ns for at, _ in gates))
+        self.assertTrue(all(n % 100 == 0 for n in shot["arrivals_ns"]))
+        self.assertTrue(any(14 in m and wire.fields(m[14])[1] == CLOCK_PIN for m in sent))
+        with self.assertRaises(RuntimeError):
+            board.fire(0, 0)
+
+    def test_sensor_crc_known_vector(self):
+        self.assertEqual(crc8(bytes.fromhex("beef")), 0x92)
+
+    def test_missing_sensor_omits_gate_signal(self):
+        board = Board(0)
+        board.attached.set()
+        board.armed = True
+        sent = []
+        board.send = lambda data: sent.append(wire.fields(data))
+        board.fire(0, 0, missing=("E",))
+        board.next_quantum()
+        self.assertEqual({wire.fields(m[6])[1] for m in sent if 6 in m}, {5, 7, 15})
+
+
+if __name__ == "__main__":
+    unittest.main()

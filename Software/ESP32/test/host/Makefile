@@ -14,6 +14,7 @@ test: test_journal
 	./test_journal
 	CC="$(CC)" CFLAGS="$(CFLAGS)" python3 test_firmware.py
 	node test_app.js
+	node test_series.js
 
 test_journal: test_journal.c $(MAIN)/journal.c $(MAIN)/journal.h
 	$(CC) $(CFLAGS) -o $@ test_journal.c $(MAIN)/journal.c
