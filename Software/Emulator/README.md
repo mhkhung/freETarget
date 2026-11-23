@@ -17,7 +17,7 @@ From the repository root:
 docker pull espressif/idf:v5.3.1
 python3 Software/Emulator/emulator.py install
 python3 Software/Emulator/emulator.py prepare --build
-python3 Software/Emulator/emulator.py run --fresh
+python3 Software/Emulator/emulator.py run
 ```
 
 Open **http://127.0.0.1:18888/**. Boot takes roughly 10–30 seconds depending on
@@ -44,7 +44,7 @@ connects to WebSockets on port 18080 automatically; no `?ws=` parameter is neede
 
 Use the athlete page or dashboard buttons to start/end sessions. “Reset ESP32”
 reboots the virtual CPU while retaining its flash journal. Ctrl-C stops the
-emulator and saves flash; running again without `--fresh` resumes that flash.
+emulator and saves flash; running again resumes that flash.
 To stop an emulator running in the background or in another terminal
 (including a smoke test), run:
 
@@ -59,9 +59,12 @@ after `--timeout` seconds (default 10).
 `--fresh` resets only the emulator's `target.bin`, including saved shots and
 configuration. The smoke test has its own separate flash and ports.
 
-After editing firmware, run `prepare --build` again to refresh its isolated
-source copy, then restart with `run --fresh` to use the new image. Stop the
-running emulator before rebuilding. Plain `prepare` reuses the existing build.
+After editing firmware, stop the emulator, run `prepare --build` again to
+refresh its isolated source copy, then `run`. Each start copies the current
+build (bootloader, partition table and app) into the saved flash and keeps its
+settings and shot journal, so the emulator always runs the latest firmware.
+Use `run --fresh` to also reset the settings and saved shots. Plain `prepare`
+reuses the existing build.
 
 The installer downloads **esp-emu v1.2.0** from Espressif's GitHub release and
 checks its release SHA-256 checksum. It installs only in `.runtime/bin/`.

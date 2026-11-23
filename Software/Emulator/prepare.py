@@ -12,6 +12,32 @@ RUNTIME = ROOT / ".runtime"
 IDF_IMAGE = "espressif/idf:v5.3.1"
 
 
+def partition(table, name):
+    """(offset, size) of a partition with an explicit offset in an ESP-IDF partitions.csv."""
+    for line in Path(table).read_text().splitlines():
+        fields = [f.strip() for f in line.split("#")[0].split(",")]
+        if len(fields) >= 5 and fields[0] == name and fields[3]:
+            size = fields[4].upper()
+            scale = {"K": 1024, "M": 1024 * 1024}.get(size[-1:], 1)
+            return int(fields[3], 0), int(size.rstrip("KM"), 0) * scale
+    raise ValueError(f"partition {name} needs an explicit offset in {table}")
+
+
+def refresh_firmware(flash, factory=RUNTIME / "factory.bin", table=RUNTIME / "source/partitions.csv"):
+    """Put the current build into saved flash, keeping its NVS settings and shot journal.
+
+    Copies the bootloader and partition table, the OTA boot selection (so the
+    factory app boots) and the whole factory app partition from factory.bin.
+    """
+    image, saved = Path(factory).read_bytes(), bytearray(Path(flash).read_bytes())
+    if len(image) != len(saved):
+        raise ValueError("saved flash and factory image differ in size; run with --fresh")
+    regions = [(0, 0x9000), partition(table, "ota_data"), partition(table, "factory")]
+    for start, size in regions:
+        saved[start:start + size] = image[start:start + size]
+    Path(flash).write_bytes(saved)
+
+
 def prepare(build=False):
     RUNTIME.mkdir(parents=True, exist_ok=True)
     source = RUNTIME / "source"

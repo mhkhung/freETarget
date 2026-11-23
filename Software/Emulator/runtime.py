@@ -11,7 +11,7 @@ import urllib.request
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from board import Board
-from prepare import RUNTIME, ROOT
+from prepare import RUNTIME, ROOT, refresh_firmware
 from websocket import WebSocket
 from physics import Target, speed_of_sound
 
@@ -72,6 +72,8 @@ class Runtime:
                                        "Stop it with: python3 Software/Emulator/emulator.py stop") from None
         if self.fresh or not self.flash.exists():
             shutil.copyfile(factory, self.flash)
+        else:
+            refresh_firmware(self.flash, factory)   # Run the current build; keep settings and saved shots
         config = RUNTIME / "settings.json"
         config.write_text('{"autoupdate":false}\n')
         (RUNTIME / (self.state + "-emulator.log")).write_text("")

@@ -3,11 +3,14 @@ import collections
 import math
 import socket
 import struct
+import tempfile
 import unittest
+from pathlib import Path
 
 import protocol as wire
 from board import ARM_SETTLE_NS, Board, CLOCK_PIN, crc8
 from physics import Target, speed_of_sound
+from prepare import partition, refresh_firmware
 from websocket import WebSocket
 
 
@@ -163,6 +166,41 @@ class BoardTests(unittest.TestCase):
         board.fire(0, 0, missing=("E",))
         board.next_quantum()
         self.assertEqual({wire.fields(m[6])[1] for m in sent if 6 in m}, {5, 7, 15})
+
+
+class FlashTests(unittest.TestCase):
+    TABLE = ("# Name, Type, SubType, Offset, Size\n"
+             "nvs,      data, nvs,     0x9000,  0x4000,\n"
+             "ota_data, data, ota,     0xd000,  0x2000\n"
+             "factory,  app,  factory, 0x10000, 64K,\n"
+             "ota_0,    app,  ota_0,   ,        64K,\n"
+             "shots,    data, 0x40,    0x40000, 16K,\n")
+
+    def test_partition_sizes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            table = Path(folder, "partitions.csv")
+            table.write_text(self.TABLE)
+            self.assertEqual(partition(table, "factory"), (0x10000, 0x10000))
+            self.assertEqual(partition(table, "ota_data"), (0xd000, 0x2000))
+            with self.assertRaises(ValueError):
+                partition(table, "ota_0")              # No explicit offset
+
+    def test_refresh_keeps_settings_and_journal(self):
+        with tempfile.TemporaryDirectory() as folder:
+            folder = Path(folder)
+            (folder / "partitions.csv").write_text(self.TABLE)
+            size = 0x50000
+            (folder / "factory.bin").write_bytes(b"N" * size)           # The new build
+            saved = bytearray(b"O" * size)                              # Old app, settings and shots
+            (folder / "target.bin").write_bytes(saved)
+            refresh_firmware(folder / "target.bin", folder / "factory.bin", folder / "partitions.csv")
+            flash = (folder / "target.bin").read_bytes()
+            self.assertEqual(set(flash[:0x9000]), {ord("N")})          # Bootloader and partition table
+            self.assertEqual(set(flash[0x9000:0xd000]), {ord("O")})    # NVS settings kept
+            self.assertEqual(set(flash[0xd000:0xf000]), {ord("N")})    # Boot the factory app
+            self.assertEqual(set(flash[0xf000:0x10000]), {ord("O")})
+            self.assertEqual(set(flash[0x10000:0x20000]), {ord("N")})  # The new app
+            self.assertEqual(set(flash[0x20000:]), {ord("O")})         # OTA slots and the shot journal kept
 
 
 if __name__ == "__main__":
