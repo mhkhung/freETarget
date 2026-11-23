@@ -150,9 +150,10 @@ static void add_client(int fd)
   wake_sender();
 }
 
-static void remove_client(int fd, unsigned int gen) // gen 0 = any client on this socket
+static bool remove_client(int fd, unsigned int gen) // gen 0 = any client on this socket.  True if one was removed
 {
-  int i;
+  int  i;
+  bool removed = false;
 
   xSemaphoreTake(client_lock, portMAX_DELAY);
   for ( i = 0; i != WS_MAX_CLIENTS; i++ )
@@ -161,9 +162,11 @@ static void remove_client(int fd, unsigned int gen) // gen 0 = any client on thi
     {
       clients[i].used = false;
       client_count--;
+      removed         = true;
     }
   }
   xSemaphoreGive(client_lock);
+  return removed;
 }
 
 void ws_api_closed(int fd)
@@ -342,9 +345,16 @@ static bool send_text(int fd, const char *text, size_t length)
 
 static void drop(int fd, unsigned int gen)
 {
-  DLT(DLT_COMMUNICATION, SEND(CONSOLE, sprintf(_xs, "WebSocket client %d dropped", fd);))
-  remove_client(fd, gen);
-  httpd_sess_trigger_close(ws_server, fd);
+  /*
+   * Close the socket only if this client was still on it.  If it had
+   * already gone, the web server closed the socket and may have given
+   * the same number to a new connection, which must not be closed.
+   */
+  if ( remove_client(fd, gen) )
+  {
+    DLT(DLT_COMMUNICATION, SEND(CONSOLE, sprintf(_xs, "WebSocket client %d dropped", fd);))
+    httpd_sess_trigger_close(ws_server, fd);
+  }
 }
 
 static bool send_hello(int fd)
