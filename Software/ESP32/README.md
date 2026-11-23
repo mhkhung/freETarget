@@ -29,7 +29,8 @@ Run `idf.py reconfigure` after adding or removing a `.c` file under `main/`.
 
 ## Host unit tests
 
-Modules without ESP-IDF dependencies are tested on the development computer:
+Run the journal, command stream, timed fire and athlete-page regression tests
+on the development computer with a C compiler, Python 3 and Node.js installed:
 
 ```sh
 cd test/host

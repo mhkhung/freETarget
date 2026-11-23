@@ -484,6 +484,13 @@ unsigned int reduce(void)
     DLT(DLT_DEBUG, SEND(CONSOLE, sprintf(_xs, "shot_in: %d,  shot_out:%d", shot_in, shot_out);))
     DLT(DLT_DEBUG, show_sensor_status(record[shot_out].sensor_status);)
 
+    if ( record[shot_out].miss != 0 )       // Captured outside the timed fire window, even if the sensors could not locate it
+    {
+      DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "Shot outside the timed fire window ignored");))
+      shot_out = (shot_out + 1) % SHOT_SPACE;
+      continue;
+    }
+
     if ( (record[shot_out].sensor_status & 0x0f) != 0x0f )
     {
       show_sensor_fault(record[shot_out].sensor_status);
@@ -502,12 +509,6 @@ unsigned int reduce(void)
         if ( too_far(&record[shot_out]) )       // Not on this target, do not save or report it
         {
           set_status_LED(LED_MISS);
-          shot_out = (shot_out + 1) % SHOT_SPACE;
-          continue;
-        }
-        if ( record[shot_out].miss != 0 )       // Timed fire, outside the shooting window
-        {
-          DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "Shot outside the timed fire window ignored");))
           shot_out = (shot_out + 1) % SHOT_SPACE;
           continue;
         }

@@ -36,6 +36,7 @@ static bool timed_fire_active(void);          // TRUE if the timed fire event is
 static bool timed_fire_start_new_cycle(void); // TRUE if a new timed fire cycle is starting
 static void timed_fire_next_state(void);      // Start the next state in the timed fire sequence
 static void timed_fire_exit(void);            // Handle the exit of the timed fire event
+static bool timed_fire_finish_window(void);   // Report a miss once the closed window's shots have been reduced
 static void timed_fire_event_override(void);  // Change settings based on the event name (e.g. shot count override in the event name)
 
 /*
@@ -80,6 +81,8 @@ static unsigned int   rapid_index;         // Index of the current state
 static int            last_enable = 0;
 static char           score_mode;          // What score mode are we in?
 static volatile int   scored_shots;        // Shots scored by reduce() during this string
+static int            window_start_shots;  // Accepted shots before the current shooting window
+static bool           window_miss_pending; // Closed window waiting for its queued shots to be reduced
 
 /*
  * State tables for timed fire events
@@ -202,6 +205,11 @@ const course_of_fire_t course_of_fire[] = {
  * ------------------------------------------------------------*/
 void timed_event_task(void)
 {
+  if ( !timed_fire_finish_window() )
+  {
+    return; // Keep the lights closed until pending shots have been judged
+  }
+
   /*
    *  Check exit conditions
    */
@@ -276,6 +284,30 @@ void timed_fire_scored(void)
   {
     scored_shots++;
   }
+}
+
+/*
+ * Acquisition alone is not a shot: reduce() may reject a neighbouring
+ * lane's trigger.  Wait for the queue to drain before deciding whether
+ * a closed window needs a miss, including shots captured at its end.
+ */
+static bool timed_fire_finish_window(void)
+{
+  if ( !window_miss_pending )
+  {
+    return true;
+  }
+  if ( shot_in != shot_out )
+  {
+    return false;
+  }
+
+  window_miss_pending = false;
+  if ( scored_shots == window_start_shots )
+  {
+    report_miss();
+  }
+  return true;
 }
 
 /*----------------------------------------------------------------
@@ -359,6 +391,7 @@ static bool timed_fire_start_new_cycle(void)
   event_timer         = ((int)*(rapid_state->timer)) * ONE_SECOND;
   rapid_index         = 0;                                           // Start at the beginning of the state machine
   scored_shots        = 0;                                           // No shots yet
+  window_miss_pending = false;
   adjusted_rapid_wait = (json_rapid_wait * ONE_SECOND) - grace_time; // Corrected rapid wait time
   cycle_count         = json_rapid_count;                            // Initialize the cycle count with the number of expected shots
 
@@ -391,7 +424,7 @@ static bool timed_fire_start_new_cycle(void)
  * ------------------------------------------------------------*/
 static void timed_fire_next_state(void)
 {
-  static int last_run_state = 0;
+  unsigned int last_shot_state = (rapid_state + rapid_index)->in_shot;
 
   if ( *((rapid_state + rapid_index)->exit_condition) != 0 ) // Decrement the exit condition if it is not zero
   {
@@ -432,26 +465,18 @@ static void timed_fire_next_state(void)
   /*
    * Update the run state
    */
-  run_state = (run_state & ~IN_SHOT) | (rapid_state + rapid_index)->in_shot; // Update the IN_SHOT state
-
-  if ( (run_state ^ last_run_state) & IN_SHOT )                              // Look for a transition in the IN_SHOT state
+  if ( !last_shot_state && (rapid_state + rapid_index)->in_shot ) // Set the baseline before opening the window
   {
-    if ( run_state & IN_SHOT )                                               // Transition TO IN_SHOT, so reset the aquire flag
-    {
-      run_state &= ~IN_AQUIRE;   // Reset the aquire flag, so we will aquire the shot when it happens
-    }
-    else                         // Transition out of IN_SHOT, so show that we have already aquired this shot, so we don't report the miss
-    {
-      IF_NOT(IN_AQUIRE)          // We didn't aquire the shot, so we have to report the miss
-      {
-        if ( score_mode == 'D' ) // Report missed During the event
-        {
-          report_miss();
-        }
-      }
-    }
+    window_start_shots = scored_shots;
+    run_state &= ~IN_AQUIRE;
   }
-  last_run_state = run_state;
+  run_state = (run_state & ~IN_SHOT) | (rapid_state + rapid_index)->in_shot;
+
+  if ( last_shot_state && !(run_state & IN_SHOT) && (score_mode == 'D') )
+  {
+    window_miss_pending = true;
+    timed_fire_finish_window();
+  }
 
   /*
    *  All done

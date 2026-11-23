@@ -249,9 +249,8 @@ void freeETarget_json(void *pvParameters)
           {
             got_left_bracket  = false;
             got_right_bracket = in_JSON;
-            handle_json();         // Fall through to manage the JSON message
+            handle_json();         // Execute this command, leaving any following commands queued
             vTaskDelay(TICK_10ms);
-            serial_flush(ALL);
           }
           break;
 

@@ -217,8 +217,10 @@ const decimalFor = (code) => (prefs.decimal[(code | 0) & ~1] ?? faceOf(code).dec
  * One object per session, filled from the journal: session changes
  * ("modes") and shots, in order.
  */
-function newSession(n) { return { session: n, target: 0, modes: [], shots: [] }; }
+function newSession(n) { return { session: n, target: 0, modes: [], shots: [], lastSeq: 0 }; }
 function addEvent(d, m) {
+  if (m.seq <= d.lastSeq) return;                              // A restarted history replay repeats its earlier entries
+  d.lastSeq = m.seq;
   if ("change" in m) {
     if (m.target) d.target = m.target;
     d.modes.push({ type: m.session_type, utc: m.utc, change: m.change, seq: m.seq });
