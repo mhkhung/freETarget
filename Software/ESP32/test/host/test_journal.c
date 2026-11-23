@@ -784,6 +784,103 @@ static void test_many_power_ups(void)
   sim_free(f);
 }
 
+static void test_follow(void)
+{
+  sim_flash_t *f = sim_new(4);
+  journal_t    j;
+  jrnl_iter_t  it;
+  jrnl_entry_t e;
+  uint32_t     last = 0;
+  uint32_t     got  = 0;
+  uint32_t     total;
+  int          n;
+
+  printf("follow new entries\n");
+  reboot(&j, f);
+  journal_iter_after(&j, &it, 0);
+  CHECK(!journal_next(&j, &it, &e));                    // Empty
+  journal_iter_follow(&j, &it);
+  CHECK(!journal_next(&j, &it, &e));                    // Still empty
+
+  for ( total = 0; total != 700; total++ )              // Several laps of the 256 entry ring, read as we go
+  {
+    e = make_shot((int)total);
+    CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+    if ( (total % 7) == 0 )                             // The reader falls behind now and then
+    {
+      continue;
+    }
+    journal_iter_follow(&j, &it);
+    for ( n = 0; journal_next(&j, &it, &e); n++ )
+    {
+      CHECK(e.seq == last + 1);                         // In order, nothing skipped or repeated
+      last = e.seq;
+      got++;
+    }
+    CHECK(n >= 1);
+  }
+  journal_iter_follow(&j, &it);
+  while ( journal_next(&j, &it, &e) )
+  {
+    CHECK(e.seq == last + 1);
+    last = e.seq;
+    got++;
+  }
+  CHECK(last == j.next_seq - 1);                        // Caught up with the writer
+  CHECK(got == 701);                                    // 700 shots + the session entry
+
+  journal_iter_session(&j, &it);                        // A session iterator follows too
+  while ( journal_next(&j, &it, &e) )
+  {
+  }
+  e = make_shot(1);
+  CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+  CHECK(!journal_next(&j, &it, &e));                    // Finished until told to follow
+  journal_iter_follow(&j, &it);
+  CHECK(journal_next(&j, &it, &e) && (e.seq == j.next_seq - 1));
+  CHECK(!journal_next(&j, &it, &e));
+  sim_free(f);
+}
+
+static void test_follow_overrun(void)
+{
+  sim_flash_t *f = sim_new(4);
+  journal_t    j;
+  jrnl_iter_t  it;
+  jrnl_entry_t e;
+  uint32_t     last = 0;
+  uint32_t     first = 0;
+  int          n;
+
+  printf("follow after the reader is lapped\n");
+  reboot(&j, f);
+  e = make_shot(0);
+  CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+  journal_iter_after(&j, &it, 0);
+  while ( journal_next(&j, &it, &e) )
+  {
+    last = e.seq;
+  }
+  for ( n = 0; n != 300; n++ )                          // More than the ring holds
+  {
+    e = make_shot(n);
+    CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+  }
+  journal_iter_follow(&j, &it);
+  for ( n = 0; journal_next(&j, &it, &e); n++ )
+  {
+    if ( n == 0 )
+    {
+      first = e.seq;
+    }
+    CHECK(e.seq > last);                                // Never goes backwards
+    last = e.seq;
+  }
+  CHECK(first > 2);                                     // The oldest were overwritten
+  CHECK(last == j.next_seq - 1);
+  sim_free(f);
+}
+
 int main(void)
 {
   test_crc();
@@ -801,6 +898,8 @@ int main(void)
   test_clock();
   test_clock_before_session();
   test_many_power_ups();
+  test_follow();
+  test_follow_overrun();
 
   printf("\n%d checks, %d failures\n", checks, failures);
   return failures == 0 ? 0 : 1;

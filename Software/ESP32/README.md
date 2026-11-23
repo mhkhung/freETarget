@@ -97,3 +97,24 @@ the distance.
   ring.
 - A positive number: the limit in mm.
 - A negative number: no limit.
+
+## WebSocket API
+
+Browsers and other network clients can use `ws://<target>:8080/ws`. The
+protocol is described in [main/TCPIP/ws_api.h](main/TCPIP/ws_api.h). In short:
+
+- On connecting, the target sends `{"hello": ...}` with its name, firmware
+  version, current session and `next_seq`.
+- The client sends `{"AFTER": 0}` to receive the current session, or
+  `{"AFTER": <last seq seen>}` after reconnecting. The target sends those
+  shots from the journal, then `{"caught_up": n}`, then new shots as they are
+  fired. Nothing is lost or repeated across a dropped connection.
+- Shots look like the TCP ones (`"shot"`, `"seq"`, `"x"`, `"y"`, `"r"`, `"a"`,
+  `"utc"`, ...) plus `"session"`, without the `{{{{{` prefix. Session changes
+  arrive as `{"session": ..., "change": "new"}` or `"mode"`.
+- Any other message is an ordinary JSON command (`{"TIME": ...}`,
+  `{"ECHO":0}`, ...). Command output comes back as plain text.
+
+`http://<target>:8080/live` is a small test page that plots the shots and has
+a command line. The API is on port 8080 because the port 80 server is busy for
+as long as the main page waits for a shot in `/events`.

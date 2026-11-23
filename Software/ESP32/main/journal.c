@@ -613,6 +613,31 @@ void journal_iter_after(const journal_t *j, jrnl_iter_t *it, uint32_t after_seq)
 
 /*----------------------------------------------------------------
  *
+ * @function: journal_iter_follow
+ *
+ * @brief:    Let an iterator that has caught up continue later
+ *
+ *----------------------------------------------------------------
+ *
+ * Once journal_next() returns false the iterator is finished.  Call
+ * this before the next journal_next() to pick up the entries that were
+ * appended since; nothing already returned is returned again.  Used to
+ * stream shots to a client as they arrive.
+ *
+ * If more than a whole journal of entries is appended in between, the
+ * oldest of them have been overwritten and are skipped.
+ *
+ *--------------------------------------------------------------*/
+void journal_iter_follow(const journal_t *j, jrnl_iter_t *it)
+{
+  if ( j->is_open && (it->visited >= j->slots) )
+  {
+    it->visited = 0;
+  }
+}
+
+/*----------------------------------------------------------------
+ *
  * @function: journal_next
  *
  * @brief:    Return the next matching entry in seq order

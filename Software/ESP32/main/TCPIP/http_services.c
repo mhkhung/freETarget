@@ -37,6 +37,7 @@
 #include "serial_io.h"
 
 #include "html.h"
+#include "ws_api.h"
 
 #define EXAMPLE_HTTP_QUERY_KEY_MAX_LEN (64)
 
@@ -78,6 +79,7 @@ static esp_err_t service_get_who(httpd_req_t *req);                             
 static esp_err_t service_get_FreeETarget_png(httpd_req_t *req);                        // Icon for the FreeETarget page
 static esp_err_t service_get_json(httpd_req_t *req);                                   // Webb ased JSON interface
 static esp_err_t service_get_events(httpd_req_t *req);                                 // Get shot events
+static esp_err_t service_get_live(httpd_req_t *req);                                   // WebSocket test page
 static esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err);       // Create a URL not found handler
 static esp_err_t service_post_post(httpd_req_t *req);
 static void      http_printf(const char *format, httpd_req_t *req, unsigned int size); // Formatted print to the HTTP request
@@ -85,20 +87,23 @@ static void      http_printf(const char *format, httpd_req_t *req, unsigned int 
 /*
  *  URI handlers
  */
+#define URI(path, function, context) {.uri = (path), .method = HTTP_GET, .handler = (function), .user_ctx = (context)}
+
 const my_uri_t uri_list[] = {
-    {DEFAULT_HTTP_PORT, "Display target",      {"/", HTTP_GET, service_get_FreeETarget, NULL}                     }, // Main target page
-    {DEFAULT_HTTP_PORT, "",                    {"/events", HTTP_GET, service_get_events, (void *)&http_events_ctx}},
+    {DEFAULT_HTTP_PORT, "Display target",      URI("/", service_get_FreeETarget, NULL)                     }, // Main target page
+    {DEFAULT_HTTP_PORT, "",                    URI("/events", service_get_events, (void *)&http_events_ctx)},
 
-    {DEFAULT_HTTP_PORT, "Help menu",           {"/help", HTTP_GET, service_get_help, NULL}                        },
-    {DEFAULT_HTTP_PORT, "Target info",         {"/who", HTTP_GET, service_get_who, NULL}                          },
-    {DEFAULT_HTTP_PORT, "JSON command line",   {"/json", HTTP_GET, service_get_json, NULL}                        },
-    {DEFAULT_HTTP_PORT, "",                    {"/favicon.ico", HTTP_GET, service_get_FreeETarget_png, NULL}      },
+    {DEFAULT_HTTP_PORT, "Help menu",           URI("/help", service_get_help, NULL)                        },
+    {DEFAULT_HTTP_PORT, "Target info",         URI("/who", service_get_who, NULL)                          },
+    {DEFAULT_HTTP_PORT, "JSON command line",   URI("/json", service_get_json, NULL)                        },
+    {DEFAULT_HTTP_PORT, "",                    URI("/favicon.ico", service_get_FreeETarget_png, NULL)      },
 
-    {EVENT_HTTP_PORT,   "Target control menu", {"/", HTTP_GET, service_get_menu, (void *)&event_menu_ctx}         }, // Control back channel
-    {EVENT_HTTP_PORT,   "Target control menu", {"/menu", HTTP_GET, service_get_menu, (void *)&event_menu_ctx}     },
-    {EVENT_HTTP_PORT,   "Duplicate Help menu", {"/help", HTTP_GET, service_get_help, NULL}                        },
-    {EVENT_HTTP_PORT,   "",                    {"/favicon.ico", HTTP_GET, service_get_FreeETarget_png, NULL}      },
-    {0,                 "",                    {"", 0, NULL, NULL}                                                }
+    {EVENT_HTTP_PORT,   "Target control menu", URI("/", service_get_menu, (void *)&event_menu_ctx)         }, // Control back channel
+    {EVENT_HTTP_PORT,   "Target control menu", URI("/menu", service_get_menu, (void *)&event_menu_ctx)     },
+    {EVENT_HTTP_PORT,   "Duplicate Help menu", URI("/help", service_get_help, NULL)                        },
+    {EVENT_HTTP_PORT,   "Live shots (WebSocket)", URI("/live", service_get_live, NULL)                    },
+    {EVENT_HTTP_PORT,   "",                    URI("/favicon.ico", service_get_FreeETarget_png, NULL)      },
+    {0,                 "",                    {.uri = ""}                                                  }
 };
 
 /*
@@ -142,7 +147,29 @@ void register_services(httpd_handle_t server, // Pointer to active server
 
     i++;
   }
+
+  /*
+   * The WebSocket API goes on the control port.  The port 80 server
+   * is busy for as long as the main page waits in /events.
+   */
+  if ( port == EVENT_HTTP_PORT )
+  {
+    ws_api_register(server);        // WebSocket API on /ws
+  }
   return;
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: service_get_live
+ *
+ * @brief:    Small page that shows the shots received over /ws
+ *
+ *--------------------------------------------------------------*/
+static esp_err_t service_get_live(httpd_req_t *req)
+{
+  httpd_resp_set_type(req, "text/html");
+  return httpd_resp_send(req, (const char *)live_html_start, SIZEOF_live_HTML);
 }
 
 /*----------------------------------------------------------------

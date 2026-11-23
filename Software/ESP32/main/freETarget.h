@@ -116,6 +116,7 @@
 #define SCORE_PRIME       '#'         // Prime a reply to the client
 #define SCORE_SHOT        'S'         // Include shot number
 #define SCORE_SEQ         'Q'         // Include the journal sequence number (unique per shot, never reset)
+#define SCORE_SESSION_NO  'N'         // Include the journal session number
 #define SCORE_MISS        'M'         // Include miss status
 #define SCORE_SESSION     '?'         // Include session type
 #define SCORE_TIME        'T'         // Include time stamp
@@ -179,6 +180,7 @@ typedef struct
 {
   unsigned int shot;           // Shot number within the session (0 based), set by shot_journal_record()
   unsigned int seq;            // Journal sequence number, unique per shot and never reset (0 = not journaled)
+  unsigned int session;        // Journal session number, set by shot_journal_record()
   unsigned int utc;            // Time of day, Unix seconds (0 = unknown), set by shot_journal_record()
   unsigned int clock;          // Where utc came from, JRNL_SOURCE_xxx
   unsigned int miss;

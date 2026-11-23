@@ -51,11 +51,13 @@ void xs_unlock(void);                                // Release _xs
 #define HTTP_CONNECTED (TCPIP_3 << 1)                          // 0x200
 #define EVEN_ODD_BEGIN (HTTP_CONNECTED << 1)                   // Remember to output in even_odd mode
 #define EVEN_ODD_END   (EVEN_ODD_BEGIN << 1)                   // Exit even odd mode
+#define WEBSOCKET      (EVEN_ODD_END << 1)                     // WebSocket clients (ws_api.c), text output only
 
 #define AUX_PORT (AUX | BLUETOOTH | RS485 | ETHERNET ) //
 #define SOME     (CONSOLE | TCPIP)
 #define TCPIP    (TCPIP_0 | TCPIP_1 | TCPIP_2 | TCPIP_3)
-#define ALL      (CONSOLE | AUX_PORT | TCPIP | HTTP_CONNECTED)
+#define ALL      (CONSOLE | AUX_PORT | TCPIP | HTTP_CONNECTED | WEBSOCKET)
+#define ALL_SCORES (ALL & ~WEBSOCKET)                        // Scores: WebSocket clients get them from the journal
 
 /*
  *  Global Variables

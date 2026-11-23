@@ -209,6 +209,7 @@ uint32_t journal_entry_time(const journal_t *j, const jrnl_entry_t *entry, uint8
 void journal_iter_session(const journal_t *j, jrnl_iter_t *it);   // Iterate over the shots of the current session
 void journal_iter_after(const journal_t *j, jrnl_iter_t *it, uint32_t after_seq); // Iterate over all entries after a seq
 bool journal_next(const journal_t *j, jrnl_iter_t *it, jrnl_entry_t *entry);      // Next matching entry, false when done
+void journal_iter_follow(const journal_t *j, jrnl_iter_t *it);    // Let a finished iterator pick up entries appended since
 bool journal_entry_valid(const jrnl_entry_t *entry);              // Check the magic, version and CRC
 uint32_t journal_crc32(const void *data, size_t length);          // CRC32 (IEEE 802.3)
 

@@ -566,6 +566,10 @@ void build_json_score(shot_record_t *shot,     // Pointer to shot record
         score_append(out, out_size, &used, ", \"seq\":%u", shot->seq);
         break;
 
+      case SCORE_SESSION_NO:                                        // Journal session number
+        score_append(out, out_size, &used, ", \"session\":%u", shot->session);
+        break;
+
       case SCORE_MISS:                                              // Miss
         score_append(out, out_size, &used, ", \"miss\":%d", shot->miss);
         break;

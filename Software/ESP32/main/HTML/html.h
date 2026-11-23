@@ -29,4 +29,8 @@ extern const unsigned char menu_html_start[] asm("_binary_menu_html_start");
 extern const unsigned char menu_html_end[] asm("_binary_menu_html_end");
 #define SIZEOF_menu_HTML (menu_html_end - menu_html_start)
 
+extern const unsigned char live_html_start[] asm("_binary_live_html_start");
+extern const unsigned char live_html_end[] asm("_binary_live_html_end");
+#define SIZEOF_live_HTML (live_html_end - live_html_start)
+
 #endif

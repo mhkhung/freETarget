@@ -649,7 +649,7 @@ static bool print_shot(shot_record_t *shot, void *ctx) // Send one saved shot fo
   }
 
   build_json_score(shot, SCORE_USB, score, sizeof(score)); // Send out to the USB
-  serial_to_all(score, ALL);
+  serial_to_all(score, ALL_SCORES);
 
   if ( (json_remote_modes & REMOTE_MODE_CLIENT) != 0 )     // Send out to the server
   {

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<!--
+  live.html: test page for the WebSocket API (/ws).  See TCPIP/ws_api.h.
+  Shows the shots of the current session as they arrive, reconnects
+  automatically without losing or repeating shots, and has a command line.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>freETarget live</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 1em; color: #222; }
+  #status { font-weight: bold; }
+  #status.up { color: #1a7f37; } #status.down { color: #cf222e; }
+  .row { display: flex; flex-wrap: wrap; gap: 1em; align-items: flex-start; }
+  svg { border: 1px solid #ccc; background: #fafafa; }
+  table { border-collapse: collapse; font-size: 0.9em; }
+  th, td { padding: 2px 8px; text-align: right; border-bottom: 1px solid #eee; }
+  #shots { max-height: 420px; overflow-y: auto; }
+  #console { width: 100%; height: 12em; font-family: monospace; font-size: 0.85em; white-space: pre-wrap;
+             overflow-y: auto; border: 1px solid #ccc; padding: 4px; box-sizing: border-box; }
+  #cmd { width: 70%; font-family: monospace; }
+</style>
+</head>
+<body>
+<h2>freETarget live <span id="status" class="down">connecting</span></h2>
+<div id="info"></div>
+<div class="row">
+  <svg id="plot" width="400" height="400" viewBox="-100 -100 200 200"></svg>
+  <div id="shots"><table><thead><tr><th>Shot</th><th>x</th><th>y</th><th>r</th><th>Time</th><th>seq</th></tr></thead>
+    <tbody id="rows"></tbody></table></div>
+</div>
+<p><input id="cmd" placeholder='{"ECHO":0}'> <button id="send">Send</button></p>
+<div id="console"></div>
+<script>
+"use strict";
+var ws = null, lastSeq = 0, session = 0, scale = 100;
+var $ = function (id) { return document.getElementById(id); };
+
+function status(text, up) { $("status").textContent = text; $("status").className = up ? "up" : "down"; }
+function log(text) { var c = $("console"); c.textContent += text; c.scrollTop = c.scrollHeight; }
+
+function clearSession() {
+  $("rows").innerHTML = "";
+  var p = $("plot"); while (p.firstChild) p.removeChild(p.firstChild);
+  [100, 75, 50, 25].forEach(function (r) {
+    var c = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+    c.setAttribute("r", r); c.setAttribute("fill", "none"); c.setAttribute("stroke", "#bbb"); c.setAttribute("stroke-width", 0.5);
+    p.appendChild(c);
+  });
+}
+
+function addShot(s) {
+  var when = s.utc ? new Date(s.utc * 1000).toLocaleTimeString() + (s.clock === "client" ? "*" : "") : "";
+  var tr = document.createElement("tr");
+  [s.shot, s.x.toFixed(1), s.y.toFixed(1), s.r.toFixed(1), when, s.seq].forEach(function (v) {
+    var td = document.createElement("td"); td.textContent = v; tr.appendChild(td);
+  });
+  if (s.miss) tr.style.color = "#999";
+  $("rows").insertBefore(tr, $("rows").firstChild);
+  var dot = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+  dot.setAttribute("cx", s.x * 100 / scale); dot.setAttribute("cy", -s.y * 100 / scale);
+  dot.setAttribute("r", 2.5); dot.setAttribute("fill", "#0969da");
+  $("plot").appendChild(dot);
+}
+
+function handle(text) {
+  var m = null;
+  if (text.charAt(0) === "{") { try { m = JSON.parse(text); } catch (e) { m = null; } }
+  if (m === null) { log(text); return; }                       // Command output
+  if ("hello" in m) {
+    $("info").textContent = m.name + " - " + m.version + " - session " + m.session + " - clock: " + m.clock;
+    if (m.next_seq <= lastSeq) { lastSeq = 0; session = 0; }   // The journal was erased, start over
+    if (lastSeq === 0) clearSession();
+    ws.send(JSON.stringify({ AFTER: lastSeq }));               // Everything we have not seen yet
+    if (m.clock === "none") ws.send(JSON.stringify({ TIME: Math.floor(Date.now() / 1000) }));
+  } else if ("caught_up" in m) {
+    status("live", true);
+  } else if ("shot" in m) {
+    if (m.session !== session) { session = m.session; }
+    addShot(m); lastSeq = m.seq;
+  } else if ("change" in m) {
+    if (m.change === "new" && m.session !== session) { session = m.session; clearSession(); }
+    lastSeq = m.seq;
+  } else {
+    log(text + "\n");
+  }
+}
+
+function connect() {
+  status("connecting", false);
+  ws = new WebSocket("ws://" + location.host + "/ws");
+  ws.onopen = function () { status("replaying", false); };
+  ws.onmessage = function (e) { handle(e.data); };
+  ws.onclose = function () { status("reconnecting", false); setTimeout(connect, 2000); };
+}
+
+$("send").onclick = function () { if (ws && ws.readyState === 1 && $("cmd").value) { ws.send($("cmd").value); } };
+$("cmd").onkeydown = function (e) { if (e.key === "Enter") $("send").onclick(); };
+clearSession();
+connect();
+</script>
+</body>
+</html>

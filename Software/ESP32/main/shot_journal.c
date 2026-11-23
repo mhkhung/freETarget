@@ -43,6 +43,7 @@ static SemaphoreHandle_t       lock;                // Serializes access to the 
 static StaticSemaphore_t       lock_buffer;
 static bool                    resumed;             // A session was recovered at start up
 static unsigned int            unjournaled_shots;   // Shot counter if the journal could not be opened
+static shot_journal_notify_t   notify;              // Told about every new entry
 
 /*----------------------------------------------------------------
  *
@@ -102,6 +103,41 @@ static void take(void)
 static void give(void)
 {
   xSemaphoreGive(lock);
+}
+
+static void give_and_notify(void)       // Release the journal after writing, then tell the listener
+{
+  xSemaphoreGive(lock);
+  if ( notify != NULL )
+  {
+    notify();
+  }
+}
+
+/*
+ * Turn a journal entry back into a shot record
+ */
+static void entry_to_shot(const jrnl_entry_t *entry, uint32_t time, uint8_t source, shot_record_t *shot)
+{
+  memset(shot, 0, sizeof(*shot));
+  shot->shot          = entry->shot;
+  shot->seq           = entry->seq;
+  shot->session       = entry->session;
+  shot->session_type  = entry->session_type;
+  shot->miss          = (entry->flags & JRNL_FLAG_MISS) != 0;
+  shot->utc           = (time == JRNL_TIME_UNKNOWN) ? 0 : time;
+  shot->clock         = source;
+  shot->shot_time     = entry->shot_time;
+  shot->x_mm          = entry->x_mm;
+  shot->y_mm          = entry->y_mm;
+  shot->radius        = entry->radius;
+  shot->angle         = entry->angle;
+  shot->face_strike   = entry->face_strike;
+  shot->sensor_status = entry->sensor_status;
+  for ( int i = N; i <= W; i++ )
+  {
+    shot->timer_count[i] = entry->timer_count[i];
+  }
 }
 
 /*----------------------------------------------------------------
@@ -245,10 +281,11 @@ void shot_journal_record(shot_record_t *shot)
   take();
   status = journal_append_shot(&journal, &entry);
   time   = journal_entry_time(&journal, &entry, &source);
-  give();
+  give_and_notify();
 
-  shot->shot  = entry.shot;
-  shot->seq   = entry.seq;
+  shot->shot    = entry.shot;
+  shot->seq     = entry.seq;
+  shot->session = entry.session;
   shot->utc   = (time == JRNL_TIME_UNKNOWN) ? 0 : time;
   shot->clock = source;
 
@@ -275,7 +312,7 @@ void shot_journal_new_session(int session_type)
 
   take();
   status = journal_new_session(&journal, (uint8_t)session_type);
-  give();
+  give_and_notify();
 
   if ( status != JRNL_OK )
   {
@@ -294,7 +331,7 @@ void shot_journal_set_mode(int session_type)
 
   take();
   status = journal_set_mode(&journal, (uint8_t)session_type);
-  give();
+  give_and_notify();
 
   if ( status != JRNL_OK )
   {
@@ -376,24 +413,7 @@ int shot_journal_replay_session(shot_journal_cb_t f, void *ctx)
       break;
     }
 
-    memset(&shot, 0, sizeof(shot));
-    shot.shot          = entry.shot;
-    shot.seq           = entry.seq;
-    shot.session_type  = entry.session_type;
-    shot.miss          = (entry.flags & JRNL_FLAG_MISS) != 0;
-    shot.utc           = (time == JRNL_TIME_UNKNOWN) ? 0 : time;
-    shot.clock         = source;
-    shot.shot_time     = entry.shot_time;
-    shot.x_mm          = entry.x_mm;
-    shot.y_mm          = entry.y_mm;
-    shot.radius        = entry.radius;
-    shot.angle         = entry.angle;
-    shot.face_strike   = entry.face_strike;
-    shot.sensor_status = entry.sensor_status;
-    for ( int i = N; i <= W; i++ )
-    {
-      shot.timer_count[i] = entry.timer_count[i];
-    }
+    entry_to_shot(&entry, time, source, &shot);
 
     count++;
     if ( !f(&shot, ctx) )
@@ -403,6 +423,94 @@ int shot_journal_replay_session(shot_journal_cb_t f, void *ctx)
   }
 
   return count;
+}
+
+/*----------------------------------------------------------------
+ *
+ * Cursors (used by the WebSocket API)
+ *
+ *----------------------------------------------------------------
+ *
+ * The lock is only held while one entry is read, so a slow client
+ * never holds up the scoring of a new shot.
+ *
+ *--------------------------------------------------------------*/
+void shot_journal_set_notify(shot_journal_notify_t f)
+{
+  notify = f;
+}
+
+unsigned int shot_journal_session(void)
+{
+  return journal.is_open ? journal.session : 0;
+}
+
+unsigned int shot_journal_next_seq(void)
+{
+  return journal.is_open ? journal.next_seq : 0;
+}
+
+void shot_journal_cursor_start(shot_journal_cursor_t *c, unsigned int after_seq)
+{
+  memset(c, 0, sizeof(*c));
+  if ( !journal.is_open )
+  {
+    return;
+  }
+
+  take();
+  if ( (after_seq == 0) && (journal.session != 0) )
+  {
+    after_seq = journal.session_start_seq - 1;        // From the start of the current session, including its JRNL_SESSION entry
+  }
+  journal_iter_after(&journal, &c->it, after_seq);
+  give();
+}
+
+bool shot_journal_cursor_next(shot_journal_cursor_t *c, shot_journal_event_t *ev)
+{
+  jrnl_entry_t entry;
+  uint32_t     time   = JRNL_TIME_UNKNOWN;
+  uint8_t      source = JRNL_SOURCE_NONE;
+  bool         more;
+
+  if ( !journal.is_open )
+  {
+    return false;
+  }
+
+  while ( 1 )
+  {
+    take();
+    journal_iter_follow(&journal, &c->it);            // Pick up anything written since the last call
+    more = journal_next(&journal, &c->it, &entry);
+    if ( more )
+    {
+      time = journal_entry_time(&journal, &entry, &source);
+    }
+    give();
+
+    if ( !more )
+    {
+      return false;
+    }
+
+    if ( (entry.kind == JRNL_SHOT) || (entry.kind == JRNL_SESSION) || (entry.kind == JRNL_MODE) )
+    {
+      break;                                          // Clock settings are not reported
+    }
+  }
+
+  ev->kind         = entry.kind;
+  ev->seq          = entry.seq;
+  ev->session      = entry.session;
+  ev->session_type = entry.session_type & ~SESSION_VALID;
+  if ( entry.kind == JRNL_SHOT )
+  {
+    entry_to_shot(&entry, time, source, &ev->shot);
+  }
+
+  return true;
 }
 
 /*----------------------------------------------------------------

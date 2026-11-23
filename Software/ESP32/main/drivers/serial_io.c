@@ -33,6 +33,7 @@
 #include "nonvol.h"
 #include "http_server.h"
 #include "mfs.h"
+#include "ws_api.h"
 
 /*
  *  Serial IO port configuration
@@ -678,6 +679,11 @@ void serial_putch(char ch,
     if ( ports & HTTP_CONNECTED ) // Is there a web server connected?
     {
       http_send_string(str);      // Yes, send it to the web server
+    }
+
+    if ( ports & WEBSOCKET )      // Queued, never blocks
+    {
+      ws_api_console(str);
     }
 
     /*
