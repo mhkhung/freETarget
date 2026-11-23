@@ -268,12 +268,15 @@ void freeETarget_json(void *pvParameters)
           {
             Bluetooth_start_new_connection();
           }
+          break;                      // Do not add the '*' to the JSON
 
         case '^':                     // Special case for European keyboards which have a different "*" key
-          ch = '"';                   // Convert and fall through
+          ch = '"';                   // Convert to a quote
+          // Fall through
 
         case '"':                     // Start or end of text
           keep_space = (keep_space ^ 1) & 1;
+          // Fall through
 
         default:
           if ( (ch != ' ') || keep_space )
