@@ -8,6 +8,7 @@
 #include "esp_timer.h"
 #include "driver/gpio.h"
 #include "stdio.h"
+#include "string.h"
 
 #include "freETarget.h"
 #include "helpers.h"
@@ -78,6 +79,7 @@ static rapid_state_t *rapid_state = NULL;  // What state table to use
 static unsigned int   rapid_index;         // Index of the current state
 static int            last_enable = 0;
 static char           score_mode;          // What score mode are we in?
+static volatile int   scored_shots;        // Shots scored by reduce() during this string
 
 /*
  * State tables for timed fire events
@@ -234,6 +236,50 @@ void timed_event_task(void)
 
 /*----------------------------------------------------------------
  *
+ * @function: report_miss
+ *
+ * @brief:    Save and send a missed timed fire shot
+ *
+ *----------------------------------------------------------------
+ *
+ * Uses its own record, so the shot queue that the interrupt and
+ * reduce() share is not touched.
+ *
+ *--------------------------------------------------------------*/
+static void report_miss(void)
+{
+  shot_record_t miss;
+  char          score[SCORE_TEXT];               // JSON score message
+
+  memset(&miss, 0, sizeof(miss));
+  miss.miss         = 1;
+  miss.x_mm         = 1000;                       // Way off the target
+  miss.y_mm         = 1000;
+  miss.shot_time    = run_time_ms();
+  miss.session_type = SESSION_VALID | json_session_type;
+
+  shot_journal_record(&miss);                     // Save the miss, sets the shot number and seq
+  build_json_score(&miss, SCORE_USB, score, sizeof(score));
+  serial_to_all(score, ALL_SCORES);
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: timed_fire_scored
+ *
+ * @brief:    reduce() scored a shot
+ *
+ *--------------------------------------------------------------*/
+void timed_fire_scored(void)
+{
+  IF_IN(IN_RAPID)
+  {
+    scored_shots++;
+  }
+}
+
+/*----------------------------------------------------------------
+ *
  * @function: timed_fire_active
  *
  * @brief:    See if the timed fire is active
@@ -290,26 +336,21 @@ static bool timed_fire_start_new_cycle(void)
    * Look for the state machine
    */
   i = 0;
-  while ( course_of_fire[i].event != NULL )
+  while ( (course_of_fire[i].event != NULL) && !contains(json_event, course_of_fire[i].event) )
   {
-    if ( contains(json_event, course_of_fire[i].event) )
-    {
-      rapid_state = course_of_fire[i].rapid_state;
-      break;
-    }
     i++;
   }
 
-  if ( rapid_state == NULL )
+  if ( course_of_fire[i].event == NULL ) // Not a known event, use the first one (rapid fire pistol)
   {
-    i           = 0;
-    rapid_state = course_of_fire[i].rapid_state;
+    i = 0;
   }
 
+  rapid_state = course_of_fire[i].rapid_state;
+  score_mode  = course_of_fire[i].score_mode;
   if ( course_of_fire[i].start_up != NULL )
   {
-    course_of_fire[i].start_up(); // Perform the start-up action for this state machine
-    score_mode = course_of_fire[i].score_mode;
+    course_of_fire[i].start_up();        // Perform the start-up action for this state machine
   }
 
   /*
@@ -317,26 +358,12 @@ static bool timed_fire_start_new_cycle(void)
    */
   event_timer         = ((int)*(rapid_state->timer)) * ONE_SECOND;
   rapid_index         = 0;                                           // Start at the beginning of the state machine
-  shot_in             = 0;                                           // Start at the beginning of the shot sequence
+  scored_shots        = 0;                                           // No shots yet
   adjusted_rapid_wait = (json_rapid_wait * ONE_SECOND) - grace_time; // Corrected rapid wait time
   cycle_count         = json_rapid_count;                            // Initialize the cycle count with the number of expected shots
 
   DLT(DLT_RAPID_FIRE, SEND(CONSOLE, sprintf(_xs, "Starting: %s, cycle_count: %d, Wait: %4.2f, On: %4.2f", course_of_fire[i].event,
                                             cycle_count, json_rapid_wait, json_rapid_time);))
-
-                                                                     /*
-                                                                      * Force all shots to miss
-                                                                      */
-  for ( i = 0; i != json_rapid_count; i++ )
-  {
-    record[i].shot          = i;             // Fake a shot number (build_json_score adds 1 to this, so the first shot will be 1)
-    record[i].sensor_status = 0;             // Clear th
-    record[i].miss          = 1;             // Assume we miss
-    record[i].shot_time     = run_time_ms(); // Updated at the end of the event, so we have a time for the miss
-    record[i].face_strike   = 0;             // Reset face strike
-    record[i].x_mm          = 1000;          // Reset x coordinate to be way off
-    record[i].y_mm          = 1000;          // Reset y coordinate to be way off
-  }
 
   /*
    *  All done, exit
@@ -419,15 +446,7 @@ static void timed_fire_next_state(void)
       {
         if ( score_mode == 'D' ) // Report missed During the event
         {
-          char score[SCORE_TEXT];                        // JSON score message
-
-          record[shot_in].shot_time    = run_time_ms();
-          record[shot_in].session_type = SESSION_VALID | json_session_type;
-          shot_journal_record(&record[shot_in]);         // Save the miss, sets the shot number and seq
-          build_json_score(&record[shot_in], SCORE_USB, score, sizeof(score)); // Build the JSON for the miss
-          serial_to_all(score, ALL_SCORES);
-          shot_in  = (shot_in + 1) % SHOT_SPACE;         // Move to the next shot
-          shot_out = shot_in;                            // Show that we have already aquired this shot, so we don't report the miss
+          report_miss();
         }
       }
     }
@@ -469,28 +488,18 @@ static void timed_fire_exit(void)
   /*
    *  Handle any missed shots
    */
-  if ( score_mode == 'E' )                           // Report missed
+  if ( score_mode == 'E' )                           // Report the shots that were not fired as misses
   {
-    char score[SCORE_TEXT];                          // JSON score message
-
-    while ( shot_in != json_rapid_count )            // Look through all of the shots
+    for ( int n = scored_shots; n < json_rapid_count; n++ )
     {
-      record[shot_in].shot_time    = run_time_ms();
-      record[shot_in].session_type = SESSION_VALID | json_session_type;
-      shot_journal_record(&record[shot_in]);         // Save the miss, sets the shot number and seq
-      build_json_score(&record[shot_in], SCORE_USB, score, sizeof(score)); // Build the JSON for the miss
-      serial_to_all(score, ALL_SCORES);
-      shot_in  = (shot_in + 1) % SHOT_SPACE;         // Move to the next shot
-      shot_out = shot_in;                            // Show that we have already aquired this shot, so we don't report the miss
+      report_miss();
     }
   }
 
   /*
    *  Finished the timed fire event
    */
-  shot_in  = 0;
-  shot_out = 0;
-  run_state &= ~IN_RAPID;
+  run_state = (run_state & ~IN_RAPID) | IN_SHOT;    // Back to normal shooting
   json_rapid_enable = 0;                    // No longer enabled
   last_enable       = 0;
   DLT(DLT_RAPID_FIRE, SEND(CONSOLE, sprintf(_xs, "Timed fire event ended");))

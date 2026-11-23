@@ -851,10 +851,11 @@ void aquire(void)
   record[shot_in].face_strike   = face_strike;   // Record if it's a face strike
   record[shot_in].sensor_status = is_running();  // Record the sensor status
 
-  IF_IN(IN_SHOT)                                 // Only record the shot if we are actually expecting a shot
-  {
-    record[shot_in].miss = 0;                    // Show as a valid shot
-  }
+  /*
+   * In a timed fire string a shot outside the shooting window is marked
+   * as a miss, and reduce() discards it
+   */
+  record[shot_in].miss = ((run_state & IN_RAPID) && !(run_state & IN_SHOT)) ? 1 : 0;
 
   shot_in = (shot_in + 1) % SHOT_SPACE;          // Prepare for the next shot
 

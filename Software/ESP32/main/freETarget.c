@@ -505,7 +505,14 @@ unsigned int reduce(void)
           shot_out = (shot_out + 1) % SHOT_SPACE;
           continue;
         }
+        if ( record[shot_out].miss != 0 )       // Timed fire, outside the shooting window
+        {
+          DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "Shot outside the timed fire window ignored");))
+          shot_out = (shot_out + 1) % SHOT_SPACE;
+          continue;
+        }
         shot_journal_record(&record[shot_out]); // Save it before telling anyone, sets the shot number and seq
+        timed_fire_scored();                    // Counts the shots of a timed fire string
 
         build_json_score(&record[shot_out], SCORE_USB, score, sizeof(score));
         serial_to_all(score, (CONSOLE | AUX_PORT));
