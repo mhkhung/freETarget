@@ -52,9 +52,10 @@ def main():
             print("PASS: served athlete page JavaScript chooses and connects to the correct port without ?ws=", flush=True)
             served_page = RUNTIME / "smoke-athlete-page.html"
             served_page.write_text(page)
-            series = subprocess.run(["node", str(ROOT.parent / "ESP32/test/host/test_series.js"), str(served_page)],
-                                    capture_output=True, text=True, timeout=10, check=True)
-            print(series.stdout.strip(), flush=True)
+            for test in ("test_series.js", "test_features.js"):
+                result = subprocess.run(["node", str(ROOT.parent / "ESP32/test/host" / test), str(served_page)],
+                                        capture_output=True, text=True, timeout=10, check=True)
+                print(result.stdout.strip(), flush=True)
         else:
             print("SKIP: install Node.js to test the athlete page's JavaScript URL resolution", flush=True)
         browser_headers = {

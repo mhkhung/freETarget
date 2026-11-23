@@ -78,6 +78,14 @@ main { padding: 16px; }
 .latest .integer { font-size: 16px; color: var(--muted); }
 .clock { font-size: 20px; font-weight: 700; margin: 0 0 4px; font-variant-numeric: tabular-nums; }
 .clock.over { color: var(--red); }
+.clock.warn { color: var(--amber); }
+.calib { border: 1px solid var(--line); border-radius: 8px; padding: 10px; margin-top: 8px; background: var(--panel);
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.calib .pad { display: grid; grid-template-columns: repeat(3, 40px); gap: 4px; }
+.calib .pad button { padding: 4px 0; }
+.calib .readout { font-variant-numeric: tabular-nums; min-width: 14em; }
+.calib .note { flex-basis: 100%; margin: 0; font-size: 13px; color: var(--muted); }
+.calib .note.error { color: var(--amber); }
 .ended { color: var(--amber); font-weight: 600; margin: 4px 0 8px; }
 h1 { margin: 0; font-size: 22px; }
 .sub { color: var(--muted); margin: 2px 0 10px; }
@@ -104,32 +112,37 @@ dialog .row { display: flex; gap: 10px; } dialog .row label { flex: 1; }
 dialog .check { display: flex; gap: 8px; align-items: center; color: var(--fg); }
 dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .hidden { display: none !important; }
-#printhead { display: none; }
+#report { display: none; }
 @media print {
+  @page { size: A4 portrait; margin: 10mm; }
   :root { color-scheme: light; }
-  html, body { background: #fff; color: #000; }
-  header, .tools, .actions, .banner, #liveonly, .latest, #latestLabel, .series-picks, dialog { display: none !important; }
-  #printhead { display: block; margin-bottom: 8px; }
-  main { padding: 0; }
-  .view { grid-template-columns: 9cm 1fr; gap: 12px; }
-  .scoreboard { display: block; }
-  .board-scroll { overflow: visible; max-height: none; }
-  .series-board { min-width: 0; font-size: 9px; }
-  .series-board th, .series-board td { padding: 3px; }
-  .series-board thead th, .series-board th:first-child { position: static; background: #fff; color: #000; }
-  .series-board tr.selected > * { background: #fff; }
-  .series-board button { color: #000; }
-  .timing { display: none; }
-  .target { background: #fff; }
-  .muted, .sub, .shot-table th, .shot-table td:first-child, .score-totals span, .breakdown b { color: #444; }
-  .clock, .score-totals strong { color: #000; }
-  .clock { display: none; }
-  .stats, .centre { color: #000; }
-  .series-summary { background: #fff; border-color: #999; }
-  .breakdown span { background: #fff; border-color: #999; }
-  .shot-table tr.newest .decimal { color: #000; }
-  .shot-table tr.picked { background: transparent; }
+  html, body { background: #fff; color: #000; font-size: 8pt; }
+  body > :not(#report) { display: none !important; }
+  #report { display: block; }
 }
+/* The printed report (Report button, or the browser's Print): eight sections per A4 page */
+.rpage { height: 276mm; display: flex; flex-direction: column; break-after: page; overflow: hidden; color: #000; }
+.rpage:last-child { break-after: auto; }
+.rpage p { margin: .5mm 0; }
+.rhead { display: flex; justify-content: space-between; align-items: baseline; }
+.rhead h1 { font-size: 15pt; margin: 0; }
+.rhead span, .rmuted { color: #555; }
+.rsummary { font-weight: 700; font-size: 10pt; }
+.rgrid { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: repeat(4, minmax(0, 1fr)); margin-top: 2mm; }
+.rpanel { border: .25mm solid #bbb; padding: 1.5mm 2mm; display: grid; grid-template-columns: 47% 1fr; grid-template-rows: auto minmax(0, 1fr);
+  column-gap: 2.5mm; min-height: 0; overflow: hidden; }
+.rpanel .rtitle { grid-column: 1 / -1; background: #e8eef2; margin: -1.5mm -2mm 1.2mm; padding: .8mm 2mm; font-weight: 700; font-size: 8.5pt; }
+.rpanel.sighters .rtitle { background: #f7ead0; }
+.rpanel .rtitle small { font-weight: 400; color: #555; margin-left: 2mm; }
+.rplot svg { width: 100%; aspect-ratio: 1; display: block; }
+.rmean { color: #007f96; font-weight: 700; font-size: 7pt; margin-top: .5mm; font-variant-numeric: tabular-nums; }
+.rpanel table { width: 100%; border-collapse: collapse; font-size: 7pt; font-variant-numeric: tabular-nums; }
+.rpanel th { color: #555; font-weight: 500; text-align: right; }
+.rpanel td { text-align: right; padding: 0 .5mm; line-height: 1.3; }
+.rpanel td:first-child, .rpanel th:first-child { text-align: left; color: #555; }
+.rtotal { text-align: right; font-weight: 700; font-size: 8pt; margin-top: 1mm; border-top: .2mm solid #bbb; padding-top: .5mm; }
+.rrun { text-align: right; color: #555; font-size: 6.5pt; }
+.rfoot { display: flex; justify-content: space-between; gap: 4mm; color: #555; font-size: 6.3pt; margin-top: 1.5mm; }
 </style>
 </head>
 <body>
@@ -177,9 +190,23 @@ dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top
         </div>
       </div>
       <p class="line muted" id="axes">Position in mm · Centre (0, 0) · X positive right · Y negative above centre</p>
+      <div class="calib hidden" id="calib" aria-label="Calibration">
+        <b>Calibration</b>
+        <div class="pad">
+          <span></span><button id="calUp" title="Move the shots up" aria-label="Up">↑</button><span></span>
+          <button id="calLeft" title="Move the shots left" aria-label="Left">←</button><span></span><button id="calRight" title="Move the shots right" aria-label="Right">→</button>
+          <span></span><button id="calDown" title="Move the shots down" aria-label="Down">↓</button><span></span>
+        </div>
+        <label class="muted">Step <select id="calStep"><option value="0.1">0.1 mm</option><option value="0.5">0.5 mm</option>
+          <option value="1">1 mm</option><option value="2">2 mm</option></select></label>
+        <span class="readout" id="calText"></span>
+        <button id="calReset">Reset to 0</button>
+        <button id="calSave" class="primary">Save on target</button>
+        <button id="calClose">Close</button>
+        <p class="note" id="calNote"></p>
+      </div>
     </div>
     <div>
-      <div id="printhead"></div>
       <h1 id="title">Waiting for the target</h1>
       <p class="sub" id="sub"></p>
       <p class="ended hidden" id="ended"></p>
@@ -193,6 +220,7 @@ dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top
         </div>
         <p class="centre" id="centre">Average point: no hits yet</p>
         <p class="stats" id="stats"></p>
+        <p class="line muted" id="timing"></p>
       </div>
       <p class="tally" id="tally"></p>
       <div class="series-picks" id="series" aria-label="Series totals"></div>
@@ -203,10 +231,12 @@ dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top
         <button id="mode" class="hidden"></button>
         <button id="endSession" class="hidden" title="The athlete has finished: the next shot starts a new session">End session</button>
         <button id="sound" title="Speak each score (S)"></button>
+        <button id="voice" title="Speak the range commands in matches and finals"></button>
+        <button id="calibrate" title="Line up the shots with the holes in the card">Calibrate…</button>
       </div>
       <div class="actions">
         <button id="csv">Export CSV</button>
-        <button id="print">Print</button>
+        <button id="print" title="A printable report; choose Save as PDF in the print dialog">Report (PDF)</button>
       </div>
       <div id="list"></div>
     </div>
@@ -222,18 +252,27 @@ dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top
         <select name="face"><option value="100">10m Air Pistol</option><option value="110">10m Air Rifle</option>
           <option value="500">50m Pistol</option><option value="510">50m Rifle</option></select></label>
       <label>Type
-        <select name="kind"><option value="practice">Practice</option><option value="match">Match</option></select></label>
+        <select name="kind"><option value="practice">Practice</option><option value="match">Match</option>
+          <option value="final">Final</option></select></label>
     </div>
     <div class="row match-only">
       <label>Match shots <input name="shots" type="number" min="10" max="120" step="10"></label>
       <label>Sighting min <input name="sightMin" type="number" min="0" max="60"></label>
       <label>Match min <input name="matchMin" type="number" min="1" max="240"></label>
     </div>
+    <div class="row final-only">
+      <label>Sighting min <input name="finalSightMin" type="number" min="0" max="15"></label>
+    </div>
+    <p class="muted final-only" style="font-size:13px">ISSF final: two 5-shot series of 250 s, then single shots of 50 s up to
+      24 shots. Start it with <b>Start final</b> after the sighters.</p>
+    <label class="check not-practice"><input name="commands" type="checkbox"> Spoken range commands</label>
     <label class="check"><input name="decimal" type="checkbox"> Speak decimal scores</label>
     <p class="muted" style="font-size:13px">Shots already fired stay in the target's history.</p>
     <div class="buttons"><button value="cancel" formnovalidate>Cancel</button><button value="start" class="primary">Start</button></div>
   </form>
 </dialog>
+
+<div id="report"></div>
 
 <script>
 "use strict";
@@ -256,11 +295,15 @@ const FACES = {
 const faceOf = (code) => FACES[(code | 0) & ~1] || FACES[100];
 const SIGHT = 2, MATCH = 4;
 const SERIES_SIZE = 10;
+// ISSF 10 m final, as in the PC client: two 5-shot competition series of 250 s,
+// then single shots of 50 s up to 24, eliminated in pairs. Decimal scoring.
+const FINAL = { seriesShots: 5, series: 2, seriesSec: 250, total: 24, singleSec: 50 };
 const SVGNS = "http://www.w3.org/2000/svg";
 const $ = (id) => document.getElementById(id);
 
 const prefs = Object.assign({ zoom: 0, sound: false, shots: 60, sightMin: 15, matchMin: 75, athlete: "", target: 100,
-  kind: "practice", decimal: {} }, JSON.parse(localStorage.getItem("fet") || "{}"));
+  kind: "practice", decimal: {}, finalSightMin: 5, commands: false, calStep: 0.5, finals: [] },
+  JSON.parse(localStorage.getItem("fet") || "{}"));
 const savePrefs = () => localStorage.setItem("fet", JSON.stringify(prefs));
 
 function score(face, s) {
@@ -306,19 +349,61 @@ function addEvent(d, m) {
     // converts back so exports match the journal and the PC client.
     d.shots.push({ seq: m.seq, fw: m.shot, type: m.session_type & ~1, x: m.x, y: -m.y, miss: !!m.miss, utc: m.utc || 0, clock: m.clock });
     if (m.athelete) d.athlete = m.athelete;
+    if (m.event) d.event = m.event;                              // The target's current event name (not saved in the journal)
   }
 }
 function sessionType(d) { return d.modes.length ? d.modes[d.modes.length - 1].type : 0; }
+// A final is a match whose event name says so. The journal does not keep event
+// names, so this browser remembers which past sessions were finals.
+function isFinal(d, match) {
+  if (!match) return false;
+  if (d === live && /\bfinal\b/i.test(d.event || hello?.event || "")) return true;
+  return prefs.finals.includes(d.session);
+}
+function finalPlan() {                                           // Shots per series: 5, 5, then pairs
+  const plan = Array(FINAL.series).fill(FINAL.seriesShots);
+  for (let n = FINAL.series * FINAL.seriesShots; n < FINAL.total; n += 2) plan.push(Math.min(2, FINAL.total - n));
+  return plan;
+}
+const seriesSlots = (plan, i) => plan ? (plan[i] ?? 2) : SERIES_SIZE;
+function seriesFirst(plan, i) { let first = 1; for (let k = 0; k < i; k++) first += seriesSlots(plan, k); return first; }
+function seriesOf(plan, n) {                                     // Series index of record shot n (from 0)
+  if (!plan) return Math.floor(n / SERIES_SIZE);
+  let i = 0;
+  while (n >= seriesSlots(plan, i)) n -= seriesSlots(plan, i++);
+  return i;
+}
 function analyse(d) {                                            // Number the shots, split sighters and series
   const face = faceOf(d.target), sighters = [], record = [];
+  const match = d.modes.some((m) => m.type === MATCH || m.type === SIGHT), final = isFinal(d, match);
+  const plan = final ? finalPlan() : null;
+  let previous = 0;
   for (const s of d.shots) {
     Object.assign(s, score(face, s));
+    s.gap = s.utc && previous && s.utc >= previous ? s.utc - previous : null;   // Seconds since the shot before, if both are timed
+    previous = s.utc;
     if (s.type === SIGHT) { sighters.push(s); s.label = "S" + sighters.length; }
-    else { record.push(s); s.label = String(record.length); s.series = Math.floor((record.length - 1) / SERIES_SIZE); }
+    else { record.push(s); s.label = String(record.length); s.series = seriesOf(plan, record.length - 1); }
   }
   const series = [];
   for (const s of record) (series[s.series] ||= []).push(s);
-  return { face, sighters, record, series, type: sessionType(d), match: d.modes.some((m) => m.type === MATCH || m.type === SIGHT) };
+  return { face, sighters, record, series, plan, type: sessionType(d), match, final };
+}
+function timingStats(shots) {                                    // Shot times and the gaps between them
+  const timed = shots.filter((s) => s.utc), gaps = shots.filter((s) => s.gap != null);
+  if (!timed.length) return null;
+  const by = (better) => gaps.reduce((a, s) => (better(s.gap, a.gap) ? s : a), gaps[0]);
+  return { first: timed[0].utc, last: timed[timed.length - 1].utc, gaps: gaps.length,
+    average: gaps.length ? gaps.reduce((a, s) => a + s.gap, 0) / gaps.length : null,
+    shortest: gaps.length ? by((a, b) => a < b) : null, longest: gaps.length ? by((a, b) => a > b) : null };
+}
+function timingText(t, shots) {
+  if (!shots.length) return "";
+  if (!t) return "Shot times unknown: the target's clock was not set";
+  const parts = [`Time ${clockTime(t.first)}–${clockTime(t.last)} (${hms(t.last - t.first)})`];
+  if (t.gaps) parts.push(`average gap ${hms(t.average)}`, `shortest ${hms(t.shortest.gap)} (#${t.shortest.label})`,
+    `longest ${hms(t.longest.gap)} (#${t.longest.label})`);
+  return parts.join(" · ");
 }
 const total = (shots) => ({ int: shots.reduce((a, s) => a + s.int, 0), dec: Math.round(shots.reduce((a, s) => a + s.dec, 0) * 10) / 10,
   x: shots.filter((s) => s.inner).length });
@@ -348,14 +433,18 @@ const shown = () => past || live;
 /*
  * ---- Views: what the target shows ----
  */
+function seriesEntry(a, i) {
+  const first = seriesFirst(a.plan, i), slots = seriesSlots(a.plan, i);
+  const label = a.final && i >= FINAL.series ? (slots > 1 ? `Shots ${first}–${first + slots - 1}` : `Shot ${first}`) : `Series ${i + 1}`;
+  return { label, shots: a.series[i] || [], series: i, first, slots };
+}
 function views(a) {
   const v = [];
   if (a.sighters.length) v.push({ label: "Sighters", shots: a.sighters, sighter: true });
-  a.series.forEach((s, i) => v.push({ label: `Series ${i + 1}`, shots: s, series: i, first: i * SERIES_SIZE + 1, slots: SERIES_SIZE }));
-  if (!a.series.length && a.type !== SIGHT) v.push({ label: "Series 1", shots: [], series: 0, first: 1, slots: SERIES_SIZE });
-  if (a.series.length > 1) v.push({ label: a.match ? "All match shots" : "All shots", shots: a.record });
-  if (!v.length) v.push(a.type === SIGHT ? { label: "Sighters", shots: [], sighter: true }
-    : { label: "Series 1", shots: [], series: 0, first: 1, slots: SERIES_SIZE });
+  a.series.forEach((s, i) => v.push(seriesEntry(a, i)));
+  if (!a.series.length && a.type !== SIGHT) v.push(seriesEntry(a, 0));
+  if (a.series.length > 1) v.push({ label: a.final ? "All final shots" : a.match ? "All match shots" : "All shots", shots: a.record });
+  if (!v.length) v.push(a.type === SIGHT ? { label: "Sighters", shots: [], sighter: true } : seriesEntry(a, 0));
   return v;
 }
 function autoView(a, v) {                                        // Follow the shooting
@@ -419,9 +508,9 @@ function setZoom(level) {
   savePrefs();
   render();
 }
-function drawTarget(target, face, shots, opts) {
+function drawTarget(target, face, shots, opts) {                // opts.print: the report's plain style, always fitted
   target.replaceChildren();
-  const half = viewHalf(face, shots), card = face.card / 2;
+  const half = viewHalf(face, shots, opts.print ? 0 : prefs.zoom), card = face.card / 2;
   target.setAttribute("viewBox", `${-half} ${-half} ${2 * half} ${2 * half}`);
   const line = half / 300;
   svg(target, "rect", { x: -card, y: -card, width: 2 * card, height: 2 * card, fill: "#f3efe2" });
@@ -446,9 +535,9 @@ function drawTarget(target, face, shots, opts) {
   const r = face.caliber / 2;
   shots.forEach((s) => {
     if (s.miss) return;
-    const newest = s === opts.newest, pick = s === picked;
-    svg(target, "circle", { cx: s.x, cy: s.y, r, fill: newest ? "#ff3c3c" : "#2f8cff", "fill-opacity": 0.88,
-      stroke: pick ? "#ffaa00" : "#ffffff", "stroke-width": pick ? r * 0.25 : line });
+    const newest = !opts.print && s.seq === opts.newest?.seq, pick = !opts.print && s.seq === picked?.seq;
+    svg(target, "circle", { cx: s.x, cy: s.y, r, fill: opts.print ? "#6b7379" : newest ? "#ff3c3c" : "#2f8cff", "fill-opacity": 0.88,
+      stroke: pick ? "#ffaa00" : opts.print ? "#111111" : "#ffffff", "stroke-width": pick ? r * 0.25 : line });
     svg(target, "text", { x: s.x, y: s.y, "font-size": r * (s.label.length > 2 ? 0.8 : 1), "text-anchor": "middle",
       "dominant-baseline": "central", fill: "#fff", "font-weight": 700, "font-family": "system-ui, sans-serif" }, s.label);
   });
@@ -479,7 +568,9 @@ function render() {
     : `Past session ${past.session} · ${dateTime(past.modes[0]?.utc || past.shots[0]?.utc)}`;
   $("liveonly").classList.toggle("hidden", !!past);
 
-  drawTarget($("target"), a.face, cur.shots, { sighter: cur.sighter, newest, label: cur.label });
+  const shift = !past && calibrationShift();                    // Preview a calibration change on the shots shown
+  const drawn = shift ? cur.shots.map((s) => (s.miss ? s : { ...s, x: s.x + shift.dx, y: s.y + shift.dy })) : cur.shots;
+  drawTarget($("target"), a.face, drawn, { sighter: cur.sighter, newest, label: cur.label });
   $("what").textContent = cur.slots ? `Shots ${cur.first}–${cur.first + cur.slots - 1}` : cur.label;
   $("seriesView").replaceChildren(...v.map((entry, i) => el("option", { value: i }, entry.label)));
   $("seriesView").value = String(index);
@@ -491,11 +582,10 @@ function render() {
   $("zoomIn").disabled = zoomChoice(1, a.face, cur.shots) === undefined;
   $("zoomOut").disabled = zoomChoice(-1, a.face, cur.shots) === undefined;
 
-  const kind = a.type === SIGHT ? "Sighters" : a.type === MATCH ? "Match" : "Practice";
+  const kind = a.final ? (a.type === SIGHT ? "Final · sighters" : "Final") : a.type === SIGHT ? "Sighters" : a.type === MATCH ? "Match" : "Practice";
   $("title").textContent = d.session ? `${a.face.name} · ${kind}` : "No session yet";
   const athlete = d.athlete || (past ? "" : hello?.athelete || "");
   $("sub").textContent = [d.session ? `Session ${d.session}` : "", athlete].filter(Boolean).join(" · ");
-  $("printhead").textContent = `freETarget ${hello?.name || ""} · session ${d.session} · ${dateTime(d.modes[0]?.utc || d.shots[0]?.utc)}`;
 
   const latest = $("latest");
   latest.replaceChildren();
@@ -513,7 +603,9 @@ function render() {
   $("integerTotal").textContent = String(selectedTotal.int);
 
   const t = total(a.record);
-  if (a.match) {
+  if (a.final) {
+    $("tally").textContent = `Final total · ${a.record.length}/${FINAL.total} shots · ${labelledTotal(t)}` + (t.x ? ` · ${t.x}×` : "");
+  } else if (a.match) {
     const of = prefs.shots;
     $("tally").textContent = `Match total · ${a.record.length}/${of} shots · ${labelledTotal(t)}` + (t.x ? ` · ${t.x}×` : "");
   } else {
@@ -535,6 +627,7 @@ function render() {
   const g = groupStats(cur.shots);
   $("centre").textContent = averageText(g);
   $("stats").textContent = g && g.n > 1 ? `Group ${g.spread.toFixed(1)} mm · Mean radius ${g.mean.toFixed(1)} mm · ${g.n} hits` : "";
+  $("timing").textContent = timingText(timingStats(cur.shots), cur.shots);
 
   const ended = $("ended");
   ended.classList.toggle("hidden", !d.ended);
@@ -543,10 +636,12 @@ function render() {
   $("endSession").classList.toggle("hidden", !!past || !d.session || !!d.ended);
 
   const mode = $("mode");
-  mode.classList.toggle("hidden", past || !a.match || !!d.ended);
-  mode.textContent = a.type === MATCH ? "Back to sighters" : "Start match";
+  mode.classList.toggle("hidden", past || !a.match || !!d.ended || (a.final && a.type === MATCH));
+  mode.textContent = a.final ? "Start final" : a.type === MATCH ? "Back to sighters" : "Start match";
 
   $("sound").textContent = "Sound: " + (prefs.sound ? "on" : "off");
+  $("voice").textContent = "Range commands: " + (prefs.commands ? "on" : "off");
+  renderCalibration();
   renderList(cur, newest);
   renderClock();
 }
@@ -560,7 +655,7 @@ function renderSeriesBoard(a, v, index, newest) {
   const body = el("tbody");
   const entries = v.map((entry, i) => ({ ...entry, index: i })).filter(entry => entry.series !== undefined);
   // During sighting, show the upcoming scored series separately from sighters.
-  if (!entries.length) entries.push({ label: "Series 1", shots: [], series: 0, index: -1 });
+  if (!entries.length) entries.push({ ...seriesEntry(a, 0), index: -1 });
   for (const entry of entries) {
     const row = el("tr", { class: index === entry.index ? "selected" : "", "data-series": entry.series + 1 });
     const label = el("th", { scope: "row" });
@@ -571,6 +666,7 @@ function renderSeriesBoard(a, v, index, newest) {
     row.append(label);
     for (let i = 0; i < SERIES_SIZE; i++) {
       const shot = entry.shots[i];
+      if (!shot && i >= entry.slots) { row.append(el("td", { class: "empty" })); continue; }   // Final series are shorter
       const cell = el("td", { class: shot ? "" : "empty" });
       if (shot) {
         const button = el("button", {
@@ -595,7 +691,7 @@ function renderList(cur, newest) {
   list.replaceChildren();
   const table = el("table", { class: "shot-table", "aria-label": `${cur.label} scores` });
   const head = el("thead"), headings = el("tr");
-  for (const text of ["Shot", "Decimal", "Integer", "X · mm", "Y · mm", "Dir."]) headings.append(el("th", { scope: "col" }, text));
+  for (const text of ["Shot", "Decimal", "Integer", "X · mm", "Y · mm", "Dir.", "Gap", "Time"]) headings.append(el("th", { scope: "col" }, text));
   head.append(headings);
   const body = el("tbody");
   for (let i = 0; i < (cur.slots || cur.shots.length); i++) {
@@ -606,7 +702,9 @@ function renderList(cur, newest) {
       el("td", {}, s ? String(s.int) : "—"),
       el("td", {}, !s || s.miss ? "—" : formatMm(s.x)),
       el("td", {}, !s || s.miss ? "—" : formatMm(s.y)),
-      el("td", { "aria-label": "Direction from target centre" }, s ? arrow(s) : ""));
+      el("td", { "aria-label": "Direction from target centre" }, s ? arrow(s) : ""),
+      el("td", { title: "Time since the shot before" }, s?.gap != null ? hms(s.gap) : "—"),
+      el("td", {}, s?.utc ? clockTime(s.utc) : "—"));
     if (s) {
       row.tabIndex = 0;
       row.onclick = () => { picked = picked === s ? null : s; render(); };
@@ -618,6 +716,85 @@ function renderList(cur, newest) {
   list.append(table);
 }
 
+/*
+ * ---- Session clock and range officer ----
+ * Each timed part of a session is a list of phases: { label, seconds, say,
+ * marks: [[seconds left, words]], shooting }. A script starts at the
+ * journal's time for the mode change (SIGHT or MATCH), so every browser shows
+ * the same clock and a reload carries on where it was. Words are spoken in
+ * browsers with "Range commands" on.
+ */
+let skew = 0;                                                    // Target clock minus this browser's clock (seconds)
+const targetNow = () => Date.now() / 1000 + skew;
+function sightingPhases(minutes) {
+  const seconds = Math.max(0, minutes * 60);
+  return [{ label: "Sighting", say: "Your preparation and sighting time starts now.", seconds, shooting: true,
+    marks: seconds > 60 ? [[30, "30 seconds."]] : [] }, { label: "Sighting over", say: "Stop.", seconds: 0 }];
+}
+function matchPhases(minutes) {
+  const seconds = minutes * 60;
+  return [{ label: "Match", say: "Match firing. Start.", seconds, shooting: true,
+    marks: [[600, "10 minutes."], [300, "5 minutes."]].filter(([left]) => left < seconds) }, { label: "Match over", say: "Stop.", seconds: 0 }];
+}
+function finalPhases() {                                         // The PC client's virtual range officer
+  const p = [], ready = () => p.push({ label: "Get ready", seconds: 3 });
+  for (let n = 0; n < FINAL.series; n++) {
+    ready();
+    p.push({ label: "Load", say: `For the ${n ? "next" : "first"} competition series, load.`, seconds: 7 },
+      { label: `Series ${n + 1}`, say: "Start.", seconds: FINAL.seriesSec, shooting: true },
+      { label: "Stop", say: "Stop.", seconds: 15 });
+  }
+  for (let shot = FINAL.series * FINAL.seriesShots + 1; shot <= FINAL.total; shot++) {
+    ready();
+    p.push({ label: "Load", say: "For the next competition shot, load.", seconds: 7 },
+      { label: `Shot ${shot}`, say: "Start.", seconds: FINAL.singleSec, shooting: true },
+      { label: "Stop", say: "Stop.", seconds: shot === FINAL.total ? 1 : shot % 2 === 0 ? 15 : 3 });   // Eliminations after pairs
+  }
+  p.push({ label: "Final over", say: "Unload. Results are final.", seconds: 0 });
+  return p;
+}
+function schedule(d, a) {                                        // The running script, if any: { start, phases }
+  if (!d.session || d.ended) return null;
+  if (a.type === SIGHT) {
+    const start = [...d.modes].reverse().find((m) => m.type === SIGHT && m.utc)?.utc;
+    return start ? { start, phases: sightingPhases(a.final ? prefs.finalSightMin : prefs.sightMin) } : null;
+  }
+  if (a.type === MATCH) {
+    const start = d.modes.find((m) => m.type === MATCH && m.utc)?.utc;
+    return start ? { start, phases: a.final ? finalPhases() : matchPhases(prefs.matchMin) } : null;
+  }
+  return null;
+}
+function phaseAt(plan, t) {                                      // The phase at time t, and the seconds left in it
+  let begin = plan.start;
+  for (const phase of plan.phases) {
+    if (t < begin + phase.seconds) return { phase, left: begin + phase.seconds - t };
+    begin += phase.seconds;
+  }
+  return { phase: plan.phases[plan.phases.length - 1], left: 0, over: true };
+}
+function commandsBetween(plan, from, to) {                       // Words due in (from, to]
+  const due = [];
+  let begin = plan.start;
+  for (const phase of plan.phases) {
+    if (phase.say) due.push([begin, phase.say]);
+    for (const [left, words] of phase.marks || []) due.push([begin + phase.seconds - left, words]);
+    begin += phase.seconds;
+  }
+  return due.filter(([t]) => t > from && t <= to).sort((x, y) => x[0] - y[0]).map(([, words]) => words);
+}
+let spoken = null;                                               // { key, t }: commands up to t have been handled
+function speakCommands(d, plan, t) {
+  if (!plan) { spoken = null; return; }
+  const key = `${d.session}:${plan.start}:${plan.phases.length}`;
+  if (!spoken || spoken.key !== key) spoken = { key, t: t - 3 };  // A reload must not repeat earlier commands
+  for (const words of commandsBetween(plan, Math.max(spoken.t, t - 5), t)) sayCommand(words);   // Skip stale ones
+  spoken.t = Math.max(spoken.t, t);
+}
+function sayCommand(words) {
+  if (!prefs.commands || !window.speechSynthesis) return;
+  speechSynthesis.speak(new SpeechSynthesisUtterance(words));
+}
 function renderClock() {
   const box = $("clock");
   const now = Date.now() / 1000;
@@ -626,34 +803,36 @@ function renderClock() {
   // Keep the live timer visible while reviewing an earlier series or session.
   const d = live;
   box.classList.remove("over");
+  box.classList.remove("warn");
   if (!d.session) { box.textContent = "No active session"; return; }
-  if (d.ended) { box.textContent = "Session ended"; return; }
-  const type = sessionType(d);
-  const since = (t) => [...d.modes].reverse().find((m) => m.type === t && m.utc)?.utc;
+  if (d.ended) { box.textContent = "Session ended"; speakCommands(d, null); return; }
+  const a = analyse(d), t = targetNow(), plan = schedule(d, a);
+  speakCommands(d, plan, t);
   let text = "Session start time unavailable";
-  if (type === SIGHT && since(SIGHT)) {
-    const left = prefs.sightMin * 60 - (now - since(SIGHT));
-    text = left > 0 ? `Sighting ${hms(left)} left` : "Sighting time over";
-    box.classList.toggle("over", left <= 0);
-  } else if (type === MATCH && since(MATCH)) {
-    const start = d.modes.find((m) => m.type === MATCH && m.utc).utc, left = prefs.matchMin * 60 - (now - start);
-    text = left > 0 ? `Match ${hms(left)} left` : "Match time over";
-    box.classList.toggle("over", left <= 0);
-  } else if (type !== SIGHT && type !== MATCH && d.modes.find(m => m.utc)?.utc) {
-    text = `Practice ${hms(now - d.modes.find(m => m.utc).utc)} elapsed`;
+  if (plan) {
+    const at = phaseAt(plan, t), name = a.type === SIGHT ? "Sighting" : "Match";
+    if (a.final && a.type === MATCH) {                           // Finals show each phase
+      text = at.over ? at.phase.label : at.phase.shooting ? `${at.phase.label} · ${hms(Math.ceil(at.left))} left` : at.phase.label;
+      if (at.phase.shooting && !at.over) box.classList.toggle(at.left <= 5 ? "over" : "warn", at.left <= 15);
+    } else {
+      text = at.phase.shooting && !at.over ? `${name} ${hms(Math.ceil(at.left))} left` : `${name} time over`;   // Count down in whole seconds, rounded up
+      box.classList.toggle("over", !at.phase.shooting || at.over);
+    }
+  } else if (!a.match && d.modes.find((m) => m.utc)?.utc) {
+    text = `Practice ${hms(t - d.modes.find((m) => m.utc).utc)} elapsed`;
   }
   box.textContent = text;
 }
-setInterval(renderClock, 1000);
+setInterval(renderClock, 500);
 
 /*
  * ---- Spoken scores ----
  */
 function speak(s) {
   if (!prefs.sound || !window.speechSynthesis) return;
-  const dec = decimalFor(live.target);
+  const dec = decimalFor(live.target) || analyse(live).final;  // Finals are scored in decimals
   const text = s.miss ? "miss" : dec ? s.dec.toFixed(1) : String(s.int);
-  speechSynthesis.cancel();
+  if (!prefs.commands) speechSynthesis.cancel();               // Never cut off a range command
   speechSynthesis.speak(new SpeechSynthesisUtterance(text));
 }
 
@@ -678,6 +857,7 @@ function handle(text) {
   try { m = JSON.parse(text); } catch (err) { return; }      // Command output
   if ("hello" in m) {
     hello = m;
+    if (m.utc) skew = m.utc + 0.5 - Date.now() / 1000;          // Session clocks use the target's time (whole seconds)
     $("tname").textContent = m.name || "";
     if (m.next_seq <= lastSeq) { lastSeq = 0; live = newSession(0); }  // The journal was erased
     caughtUp = false;
@@ -708,6 +888,11 @@ function handle(text) {
     }
     addEvent(live, m);
     lastSeq = m.seq;
+    if (caughtUp && m.utc) skew = m.utc + 0.5 - Date.now() / 1000;   // A live event was just stamped: follow the target's clock
+    if (live.session && !prefs.finals.includes(live.session) && analyse(live).final) {
+      prefs.finals = [...prefs.finals, live.session].slice(-100);
+      savePrefs();
+    }
     if (caughtUp) {
       if ("shot" in m) { if (!past && view === null) picked = null; analyse(live); speak(live.shots[live.shots.length - 1]); }
       if (!past) render();
@@ -735,7 +920,7 @@ function renderSessions() {
   if (!sessionsCache.length) { box.append(el("p", { class: "muted" }, "No sessions stored.")); return; }
   for (const s of [...sessionsCache].reverse().filter((x) => x.shots > 0 || x.session === live.session)) {
     const face = faceOf(s.target || 100);
-    const kind = s.session_type === MATCH ? "Match" : s.session_type === SIGHT ? "Sighters" : "Practice";
+    const kind = prefs.finals.includes(s.session) ? "Final" : s.session_type === MATCH ? "Match" : s.session_type === SIGHT ? "Sighters" : "Practice";
     const b = el("button");
     b.append(el("span", {}, `Session ${s.session} · ${s.target ? face.name : "target unknown"} · ${kind}` + (s.session === live.session ? " (current)" : "")),
       el("small", {}, `${dateTime(s.first_utc)} · ${s.shots} shot${s.shots === 1 ? "" : "s"}` + (s.sighters ? ` (${s.sighters} sighters)` : "")));
@@ -773,22 +958,187 @@ $("sound").onclick = () => {
   if (prefs.sound && window.speechSynthesis) speechSynthesis.speak(new SpeechSynthesisUtterance("sound on"));
   render();
 };
+$("voice").onclick = () => {
+  prefs.commands = !prefs.commands; savePrefs();
+  if (prefs.commands && window.speechSynthesis) speechSynthesis.speak(new SpeechSynthesisUtterance("Range commands on"));
+  render();
+};
 $("mode").onclick = () => {
   const a = analyse(live);
+  if (a.final) {
+    if (confirm("Start the final? The range commands begin now and every shot counts.")) send({ SESSION: MATCH });
+    return;
+  }
   if (a.type === MATCH) { if (confirm("Go back to sighters? Shots after this count as sighters.")) send({ SESSION: SIGHT }); }
   else if (confirm("Start the match? Shots after this count for score.")) send({ SESSION: MATCH });
 };
-$("print").onclick = () => window.print();
+$("print").onclick = () => { buildReport(); window.print(); };
+globalThis.onbeforeprint = buildReport;                         // Also for the browser's own Print command
+
+/*
+ * ---- Calibration ----
+ * The target adds X_OFFSET and Y_OFFSET (mm, positive right and up) to every
+ * new shot. The hello message carries them; older firmware is asked for an
+ * ECHO. They are set through the /json command endpoint on this page's own
+ * web server, whose reply says if the target is locked.
+ */
+let calib = null;                                                // { start: {x, y} | null, x, y, busy, note, error }
+const round2 = (n) => Math.round(n * 100) / 100;
+function calibrationShift() {                                    // How far the preview moves the shots (display axes)
+  if (!calib?.start) return null;
+  return { dx: calib.x - calib.start.x, dy: -(calib.y - calib.start.y) };   // Display Y is negative up
+}
+async function targetCommand(command) {
+  const reply = await fetch("/json?" + encodeURIComponent(JSON.stringify(command)));
+  if (!reply.ok) throw new Error("HTTP " + reply.status);
+  return reply.text();
+}
+function readOffsets(text) {
+  const x = text.match(/"X_OFFSET":\s*(-?\d+(?:\.\d+)?)/), y = text.match(/"Y_OFFSET":\s*(-?\d+(?:\.\d+)?)/);
+  return x && y ? { x: +x[1], y: +y[1] } : null;
+}
+function calibrationDone(update) { if (calib) Object.assign(calib, { busy: false }, update); render(); }
+const helloOffsets = () => (typeof hello?.x_offset === "number" && typeof hello?.y_offset === "number"
+  ? { x: hello.x_offset, y: hello.y_offset } : null);
+function openCalibration() {
+  const known = helloOffsets();
+  if (known) { calib = { start: known, x: known.x, y: known.y, busy: false, note: "" }; render(); return; }
+  calib = { start: null, x: 0, y: 0, busy: true, note: "Reading the calibration from the target…" };
+  render();
+  targetCommand({ ECHO: 0 }).then((text) => {
+    const now = readOffsets(text);
+    if (!now) throw new Error("no offsets");
+    calibrationDone({ start: now, x: now.x, y: now.y, note: "" });
+  }).catch(() => calibrationDone({ error: true, note: "Could not read the calibration from the target." }));
+}
+function saveCalibration() {
+  const x = round2(calib.x), y = round2(calib.y);
+  Object.assign(calib, { busy: true, error: false, note: "Saving…" });
+  render();
+  targetCommand({ X_OFFSET: x, Y_OFFSET: y })
+    .then((reply) => {
+      if (/locked/i.test(reply)) throw new Error("locked");
+      if (/cannot decode|invalid/i.test(reply)) throw new Error("not saved");
+      if (helloOffsets()) { hello.x_offset = x; hello.y_offset = y; return { x, y }; }
+      return targetCommand({ ECHO: 0 }).then(readOffsets);   // Older firmware: read it back
+    })
+    .then((now) => {
+      if (!now || Math.abs(now.x - x) > 0.005 || Math.abs(now.y - y) > 0.005) throw new Error("not saved");
+      calibrationDone({ start: now, x: now.x, y: now.y, note: "Saved on the target. New shots use it; shots already fired keep their place." });
+    })
+    .catch((e) => calibrationDone({ error: true, note: e.message === "locked"
+      ? "The target is locked. Unlock it to change the calibration." : "The target did not accept the calibration." }));
+}
+const offsetText = (x, y) => `${Math.abs(x).toFixed(2)} mm ${x < 0 ? "left" : "right"} · ${Math.abs(y).toFixed(2)} mm ${y < 0 ? "down" : "up"}`;
+function renderCalibration() {
+  $("calib").classList.toggle("hidden", !calib || !!past);
+  if (!calib) return;
+  const ready = !!calib.start && !calib.busy, changed = ready && (calib.x !== calib.start.x || calib.y !== calib.start.y);
+  for (const id of ["calUp", "calDown", "calLeft", "calRight", "calReset", "calStep"]) $(id).disabled = !ready;
+  $("calSave").disabled = !changed;
+  $("calStep").value = String(prefs.calStep);
+  $("calText").textContent = !calib.start ? "" : `Offset ${offsetText(calib.x, calib.y)}` + (changed ? ` (saved: ${offsetText(calib.start.x, calib.start.y)})` : "");
+  $("calNote").textContent = calib.note || "Move the shots shown until they match the holes in the card, then save. " +
+    "The offset is kept on the target and applies to new shots for every client.";
+  $("calNote").classList.toggle("error", !!calib.error);
+}
+const nudge = (dx, dy) => { calib.x = round2(calib.x + dx * prefs.calStep); calib.y = round2(calib.y + dy * prefs.calStep); render(); };
+$("calibrate").onclick = () => (calib ? (calib = null, render()) : openCalibration());
+$("calUp").onclick = () => nudge(0, 1);
+$("calDown").onclick = () => nudge(0, -1);
+$("calLeft").onclick = () => nudge(-1, 0);
+$("calRight").onclick = () => nudge(1, 0);
+$("calReset").onclick = () => { calib.x = 0; calib.y = 0; render(); };
+$("calStep").onchange = () => { prefs.calStep = Number($("calStep").value) || 0.5; savePrefs(); };
+$("calSave").onclick = () => saveCalibration();
+$("calClose").onclick = () => { calib = null; render(); };
+
+/*
+ * ---- Report: eight sections per A4 page, laid out like cvLiveScore's PDF ----
+ */
+function reportSections(a) {
+  const sections = [], role = a.final ? "Final" : a.match ? "Match" : "Practice";
+  for (let i = 0; i < a.sighters.length; i += SERIES_SIZE) {
+    sections.push({ role: "Sighters", first: i + 1, shots: a.sighters.slice(i, i + SERIES_SIZE), running: a.sighters.slice(0, i + SERIES_SIZE) });
+  }
+  // Finals: the two competition series, then the single shots in tens
+  const cuts = a.final ? [0, ...Array.from({ length: FINAL.series }, (_, i) => (i + 1) * FINAL.seriesShots)] : [0];
+  for (let n = cuts[cuts.length - 1] + SERIES_SIZE; n < a.record.length + SERIES_SIZE; n += SERIES_SIZE) cuts.push(n);
+  for (let i = 0; i + 1 < cuts.length && cuts[i] < a.record.length; i++) {
+    const shots = a.record.slice(cuts[i], cuts[i + 1]);
+    const single = a.final && cuts[i] >= FINAL.series * FINAL.seriesShots;
+    const slots = Math.max(shots.length, (a.final ? Math.min(cuts[i + 1], FINAL.total) : cuts[i + 1]) - cuts[i]);
+    sections.push({ role, number: i + 1, single, first: cuts[i] + 1, slots, shots, running: a.record.slice(0, cuts[i] + shots.length) });
+  }
+  return sections;
+}
+function reportPages(sections) {                                 // Sighters get their own pages when they would crowd the score
+  const sighters = sections.filter((s) => s.role === "Sighters"), scored = sections.filter((s) => s.role !== "Sighters");
+  const groups = sighters.length && scored.length && sections.length > 8 ? [sighters, scored] : [sections];
+  const pages = [];
+  for (const group of groups) for (let i = 0; i < group.length; i += 8) pages.push(group.slice(i, i + 8));
+  return pages.length ? pages : [[]];
+}
+function reportPanel(a, section) {
+  const panel = el("div", { class: "rpanel" + (section.role === "Sighters" ? " sighters" : "") });
+  const last = section.first + section.shots.length - 1;
+  const title = el("div", { class: "rtitle" }, section.role === "Sighters" ? `Sighters ${section.first}–${last}`
+    : section.single ? `${section.role} shots ${section.first}–${last}` : `${section.role} series ${section.number}  |  ${section.first}–${last}`);
+  title.append(el("small", {}, `${section.shots.length} shot${section.shots.length === 1 ? "" : "s"}`));
+  const plot = el("div", { class: "rplot" }), picture = document.createElementNS(SVGNS, "svg");
+  drawTarget(picture, a.face, section.shots, { print: true, sighter: section.role === "Sighters", label: title.textContent });
+  const g = groupStats(section.shots);
+  plot.append(picture, el("div", { class: "rmean" }, g ? `x ${formatMm(g.cx)}  y ${formatMm(g.cy)} mm` : "x –  y – mm"));
+  const table = el("table"), head = el("tr"), body = el("tbody");
+  for (const text of ["#", "Score", "", "Gap", "Time"]) head.append(el("th", {}, text));
+  for (let i = 0; i < Math.max(section.slots || SERIES_SIZE, section.shots.length); i++) {
+    const s = section.shots[i], row = el("tr");
+    row.append(el("td", {}, s ? s.label : String(section.first + i)),
+      el("td", {}, !s ? "–" : s.miss ? "0.0M" : s.dec.toFixed(1) + (s.inner ? "X" : "")),
+      el("td", {}, s ? arrow(s) : ""), el("td", {}, s?.gap != null ? hms(s.gap) : "–"), el("td", {}, s?.utc ? clockTime(s.utc) : "–"));
+    body.append(row);
+  }
+  const thead = el("thead");
+  thead.append(head);
+  table.append(thead, body);
+  const t = total(section.shots), run = total(section.running), scores = el("div");
+  scores.append(table, el("div", { class: "rtotal" }, `${t.int} (${t.dec.toFixed(1)})  ${t.x}X`),
+    el("div", { class: "rrun" }, `${section.role === "Sighters" ? "Sighters only" : section.role + " running"}  ${run.int} (${run.dec.toFixed(1)})`));
+  panel.append(title, plot, scores);
+  return panel;
+}
+function buildReport() {
+  const d = shown(), a = analyse(d), pages = reportPages(reportSections(a));
+  const t = total(a.record), kind = a.final ? "final" : a.match ? "match" : "practice";
+  const athlete = d.athlete || (d === live ? hello?.athelete : "") || "";
+  const count = a.final ? `${a.record.length}/${FINAL.total} final shots` : a.match ? `${a.record.length}/${prefs.shots} match shots`
+    : `${a.record.length} practice shots`;
+  const note = a.match ? (a.sighters.length ? `Sighters: ${a.sighters.length} shots, not in the ${kind} total.` : "No sighters.") : "Practice session.";
+  document.title = `freETarget ${hello?.name || ""} session ${d.session} ${kind} report`.replace(/\s+/g, " ");
+  $("report").replaceChildren(...pages.map((batch, n) => {
+    const page = el("section", { class: "rpage" }), head = el("div", { class: "rhead" }), grid = el("div", { class: "rgrid" });
+    const heading = batch.length && batch.every((s) => s.role === "Sighters") ? "SIGHTER REPORT" : `${kind.toUpperCase()} REPORT`;
+    head.append(el("h1", {}, heading), el("span", {}, `freETarget ${hello?.name || ""} · ${a.face.name}`));
+    for (let i = 0; i < 8; i++) grid.append(batch[i] ? reportPanel(a, batch[i]) : el("div", { class: "rpanel" }));
+    const foot = el("div", { class: "rfoot" });
+    foot.append(el("span", {}, "X: inner ten · M: miss · Gap: time since the shot before (– unknown) · Plot numbers match the table · " +
+      "Crosshair: average point · Y negative up"), el("span", {}, `Page ${n + 1}/${pages.length}`));
+    page.append(head, el("p", {}, [athlete, `Session ${d.session}`, dateTime(d.modes[0]?.utc || d.shots[0]?.utc)].filter(Boolean).join(" · ")),
+      el("p", { class: "rsummary" }, `${count} · Score ${t.int} · Decimal ${t.dec.toFixed(1)} · ${t.x}X`),
+      el("p", {}, note), el("p", { class: "rmuted" }, timingText(timingStats(d.shots), d.shots) || "No shots."), grid, foot);
+    return page;
+  }));
+}
 $("endSession").onclick = () => {
   if (confirm("End this session? The next shot will start a new one.")) send({ SESSION_END: 0 });
 };
 $("csv").onclick = () => {
   const d = shown(), a = analyse(d);
-  const rows = [["session", "shot", "seq", "type", "x_mm", "y_mm", "r_mm", "direction", "score", "decimal", "inner_ten", "miss", "time"]];
+  const rows = [["session", "shot", "seq", "type", "x_mm", "y_mm", "r_mm", "direction", "score", "decimal", "inner_ten", "miss", "gap_s", "time"]];
   for (const s of d.shots) {
-    rows.push([d.session, s.label, s.seq, s.type === SIGHT ? "sighter" : s.type === MATCH ? "match" : "practice",
+    rows.push([d.session, s.label, s.seq, s.type === SIGHT ? "sighter" : a.final ? "final" : s.type === MATCH ? "match" : "practice",
       s.miss ? "" : s.x.toFixed(2), s.miss ? "" : (-s.y).toFixed(2), s.miss ? "" : s.r.toFixed(2), arrow(s), s.int, s.dec.toFixed(1),
-      s.inner ? 1 : 0, s.miss ? 1 : 0, s.utc ? new Date(s.utc * 1000).toISOString() : ""]);
+      s.inner ? 1 : 0, s.miss ? 1 : 0, s.gap ?? "", s.utc ? new Date(s.utc * 1000).toISOString() : ""]);
   }
   const blob = new Blob([rows.map((r) => r.join(",")).join("\n") + "\n"], { type: "text/csv" });
   const link = el("a", { href: URL.createObjectURL(blob), download: `freETarget-${hello?.name || "target"}-session${d.session}-${a.face.event.replace(/\s/g, "")}.csv` });
@@ -799,6 +1149,8 @@ const dialog = $("newDialog"), form = $("newForm");
 function syncDialog() {
   const code = form.face.value | 0;
   form.querySelector(".match-only").classList.toggle("hidden", form.kind.value !== "match");
+  for (const e of form.querySelectorAll(".final-only")) e.classList.toggle("hidden", form.kind.value !== "final");
+  form.querySelector(".not-practice").classList.toggle("hidden", form.kind.value === "practice");
   form.decimal.checked = prefs.decimal[code] ?? FACES[code].decimal;
 }
 $("newSession").onclick = () => {
@@ -806,6 +1158,7 @@ $("newSession").onclick = () => {
   form.face.value = String(prefs.target);
   form.kind.value = prefs.kind;
   form.shots.value = prefs.shots; form.sightMin.value = prefs.sightMin; form.matchMin.value = prefs.matchMin;
+  form.finalSightMin.value = prefs.finalSightMin; form.commands.checked = prefs.commands;
   syncDialog();
   dialog.showModal();
 };
@@ -814,17 +1167,22 @@ form.kind.onchange = syncDialog;
 form.decimal.onchange = () => { prefs.decimal[form.face.value | 0] = form.decimal.checked; };
 dialog.onclose = () => {
   if (dialog.returnValue !== "start") return;
-  const code = form.face.value | 0, face = FACES[code], match = form.kind.value === "match";
-  Object.assign(prefs, { athlete: form.athlete.value.trim(), target: code, kind: form.kind.value,
-    shots: +form.shots.value || 60, sightMin: +form.sightMin.value || 15, matchMin: +form.matchMin.value || 75 });
+  const code = form.face.value | 0, face = FACES[code], kind = form.kind.value, match = kind !== "practice";
+  const finalSight = Number(form.finalSightMin.value);
+  Object.assign(prefs, { athlete: form.athlete.value.trim(), target: code, kind,
+    shots: +form.shots.value || 60, sightMin: +form.sightMin.value || 15, matchMin: +form.matchMin.value || 75,
+    finalSightMin: form.finalSightMin.value !== "" && finalSight >= 0 ? finalSight : 5, commands: form.commands.checked });
   prefs.decimal[code] = form.decimal.checked;
   savePrefs();
   const clean = (s) => s.replace(/["\\{}]/g, "");
-  send({ ATHLETE: clean(prefs.athlete) || "Athlete", EVENT: `${face.event} ${match ? "Match" : "Practice"}`, TARGET_NAME: face.targetName });
-  if (hello) hello.athelete = clean(prefs.athlete) || "Athlete";
+  const event = `${face.event} ${kind === "final" ? "Final" : match ? "Match" : "Practice"}`;
+  send({ ATHLETE: clean(prefs.athlete) || "Athlete", EVENT: event, TARGET_NAME: face.targetName });
+  if (hello) { hello.athelete = clean(prefs.athlete) || "Athlete"; hello.event = event; }
+  live.event = event;
   send({ SESSION: 0 });                                       // A new session in the journal
-  if (match) send({ SESSION: SIGHT });                        // Matches start with sighters
+  if (match) send({ SESSION: SIGHT });                        // Matches and finals start with sighters
   past = null; view = null; picked = null;
+  if (match && prefs.commands && window.speechSynthesis) speechSynthesis.speak(new SpeechSynthesisUtterance(""));   // Allow speech from now on
 };
 
 document.addEventListener("keydown", (e) => {

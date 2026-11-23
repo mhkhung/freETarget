@@ -113,16 +113,32 @@ laptops, with no internet needed:
 - Live target with the newest shot in red, zoom, and the group centre. Sighter
   targets have a marked corner.
 - **New session**: athlete, discipline (10 m air pistol or rifle, 50 m pistol
-  or rifle), practice or match. Matches start with sighters; **Start match**
-  switches to record shots. Sighting and match countdowns (15 and 75 minutes by
-  default) come from the journal, so they survive a reload.
+  or rifle), practice, match or final. Matches start with sighters; **Start
+  match** switches to record shots. Sighting and match countdowns (15 and 75
+  minutes by default) come from the journal, so they survive a reload.
+- **Finals** follow the ISSF 10 m format, as in the PC client: sighters (5
+  minutes by default), then **Start final** runs two 5-shot series of 250 s and
+  single shots of 50 s up to 24, with a clock for each step. Shots are grouped
+  as 5, 5 and then pairs.
+- **Range commands**: with this on, the browser speaks the range officer's
+  commands ("For the first competition series, load", "Start", "Stop", and
+  for matches the preparation, 10 and 5 minute calls). The script is timed from
+  the journal, so every browser keeps the same time and a reload carries on.
 - Scores as in the PC client: decimal and integer, inner tens (*), totals per
   series of 10, sighters kept apart, score breakdown, group size and mean
-  radius.
-- Spoken scores (Sound), CSV export, a printable page, and **History** to open
-  any session still in the journal.
+  radius. Each shot's time and the gap since the one before, with the average,
+  shortest and longest gap.
+- **Calibrate**: move the shots (0.1 to 2 mm steps) until they match the holes
+  in the card, then save. This sets `X_OFFSET`/`Y_OFFSET` on the target, so it
+  applies to new shots for every client; a locked target refuses it.
+- **Report (PDF)**: a printable A4 report with eight series per page (target
+  plot, scores, gaps, times, totals and running totals), laid out like
+  cvLiveScore's. Choose *Save as PDF* in the print dialog.
+- Spoken scores (Sound), CSV export (with gaps), and **History** to open any
+  session still in the journal.
 
-Match length and times are kept by each browser, not by the target.
+Match length, times and which sessions were finals are kept by each browser,
+not by the target. Speech needs one tap on the page first (a browser rule).
 
 ## WebSocket API
 
