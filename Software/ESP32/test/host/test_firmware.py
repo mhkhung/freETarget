@@ -43,7 +43,15 @@ def main():
         if reduction is None:
             raise RuntimeError("Could not find the shot reduction function")
         (build / "reduction_host.inc").write_text(source[source.index("#define FORCE_PAPER_MOVE"):reduction.end()])
-        for name in ("test_json_stream", "test_timed_fire"):
+        source = (MAIN / "helpers.c").read_text()
+        helpers = []
+        for pattern in (r"^bool contains\(.*?^\}", r"^int http_target_type\(void\)\n\{.*?^\}"):
+            found = re.search(pattern, source, re.MULTILINE | re.DOTALL)
+            if found is None:
+                raise RuntimeError("Could not find " + pattern)
+            helpers.append(found.group())
+        (build / "helpers_host.inc").write_text("\n\n".join(helpers) + "\n")
+        for name in ("test_json_stream", "test_timed_fire", "test_helpers"):
             binary = build / name
             subprocess.run(compiler + flags + ["-I" + str(build), "-I" + str(MAIN / "drivers"),
                            str(HERE / (name + ".c")), "-o", str(binary), "-lm"], check=True)

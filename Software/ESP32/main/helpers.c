@@ -12,6 +12,7 @@
 #include <stdio.h>
 #include <stdarg.h>
 #include "string.h"
+#include <strings.h>
 #include "ctype.h"
 #include "driver/gpio.h"
 #include "math.h"
@@ -191,27 +192,17 @@ int instr(char *s1, // Source string
 bool contains(char *source,                    // Source string
               char *match)                     // Comparison string
 {
-  char *start;
+  size_t length = strlen(match);
 
-  start = match;                               // Save the start of the comparison string
-
-  while ( (*source != 0) && (*match != 0) )
+  for ( ; *source != 0; source++ )              // Try every starting position, so a partial match ("rR" in "AirRifle") is not lost
   {
-    if ( toupper(*match) == toupper(*source) ) // Found a match
+    if ( strncasecmp(source, match, length) == 0 )
     {
-      match++;                                 // Move to the next character in the comparison string
+      return true;
     }
-    else
-    {
-      match = start;                           // Reset the comparison string to the start
-    }
-    source++;                                  // Move to the next character in the source string
   }
 
-                                               /*
-                                                * Reached the end of the comparison string. Check that we arrived at a NULL
-                                                */
-  return *match == 0;
+  return length == 0;                           // An empty string is in everything
 }
 /*
  *  Case-insensitive string comparison
@@ -644,7 +635,7 @@ int http_target_type(void)
   /*
    * Practice or event
    */
-  if ( instr(json_event, "Practice") != -1 )
+  if ( contains(json_event, "Practice") )
   {
     target_code += 1;
   }
@@ -652,7 +643,7 @@ int http_target_type(void)
   /*
    * Rifle or pistol
    */
-  if ( instr(json_target_name, "Rifle") != -1 )
+  if ( contains(json_target_name, "Rifle") )
   {
     target_code += 10;
   }
@@ -660,7 +651,7 @@ int http_target_type(void)
   /*
    * 50m
    */
-  if ( instr(json_target_name, "50m") != -1 )
+  if ( contains(json_target_name, "50m") )
   {
     target_code += 500;
   }
