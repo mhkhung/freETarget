@@ -95,8 +95,10 @@ typedef struct queue_struct
   int  out;                       // Index of output characters
 } queue_struct_t;
 
-static queue_struct_t in_buffer;  // TCPIP input buffer
-static queue_struct_t out_buffer; // TCPIP input buffer
+static queue_struct_t     in_buffer;         // TCPIP input buffer
+static queue_struct_t     out_buffer;        // TCPIP output buffer
+static SemaphoreHandle_t  queue_lock;        // Several tasks use both queues
+static StaticSemaphore_t  queue_lock_buffer;
 
 unsigned int connection_list;     // Bitmask of existing connections
 time_count_t RS485_timer = 0;     // Timer to turn off RS485 transmitter
@@ -205,6 +207,7 @@ void serial_io_init(void)
   /*
    *  Prepare the TCPIP queues
    */
+  queue_lock     = xSemaphoreCreateMutexStatic(&queue_lock_buffer);
   in_buffer.in   = 0; // Queue pointers
   in_buffer.out  = 0;
   out_buffer.in  = 0; // Queue pointers
@@ -453,8 +456,13 @@ void serial_flush(int ports) // active port list
 
   if ( ports & TCPIP )
   {
-    in_buffer.in  = 0;
-    in_buffer.out = 0;
+    if ( queue_lock != NULL )
+    {
+      xSemaphoreTake(queue_lock, portMAX_DELAY);
+      in_buffer.in  = 0;
+      in_buffer.out = 0;
+      xSemaphoreGive(queue_lock);
+    }
   }
   return;
 }
@@ -793,21 +801,30 @@ void serial_putch(char ch,
                         int   length  // Maximum transfer size
   )
   {
-    int bytes_moved;                  // Number of bytes written
+    int bytes_moved = 0;              // Number of bytes written
+    int next;
 
-    bytes_moved = 0;
+    if ( queue_lock == NULL )          // Not set up yet (start up)
+    {
+      return 0;
+    }
+
+    xSemaphoreTake(queue_lock, portMAX_DELAY);
     while ( length != 0 )
     {
+      next = (out_buffer.in + 1) % sizeof(out_buffer.queue);
+      if ( next == out_buffer.out )   // Full, drop the rest rather than lose what is waiting
+      {
+        break;
+      }
       out_buffer.queue[out_buffer.in] = *buffer;
+      out_buffer.in                   = next;
       buffer++;
       length--;
       bytes_moved++;
-      out_buffer.in = (out_buffer.in + 1) % sizeof(out_buffer.queue);
     }
+    xSemaphoreGive(queue_lock);
 
-    /*
-     *  All done, return the number of bytes written to the queue
-     */
     return bytes_moved;
   }
 
@@ -829,31 +846,24 @@ void serial_putch(char ch,
                            int   length  // Number of bytes to read
   )
   {
-    int bytes_moved;                     // Number of bytes read from queue
+    int bytes_moved = 0;                 // Number of bytes read from queue
 
-    if ( out_buffer.out == out_buffer.in )
+    if ( queue_lock == NULL )          // Not set up yet (start up)
     {
-      return 0;                          // Nothing to say
+      return 0;
     }
 
-    bytes_moved = 0;
-
-    while ( length != 0 )
+    xSemaphoreTake(queue_lock, portMAX_DELAY);
+    while ( (length != 0) && (out_buffer.out != out_buffer.in) )
     {
-      *buffer = out_buffer.queue[out_buffer.out];
+      *buffer        = out_buffer.queue[out_buffer.out];
+      out_buffer.out = (out_buffer.out + 1) % sizeof(out_buffer.queue);
       buffer++;
       length--;
       bytes_moved++;
-      out_buffer.out = (out_buffer.out + 1) % sizeof(out_buffer.queue);
-      if ( out_buffer.out == out_buffer.in )
-      {
-        break; // RUn out of things to read
-      }
     }
+    xSemaphoreGive(queue_lock);
 
-    /*
-     *  All done, return the number of bytes written to the queue
-     */
     return bytes_moved;
   }
 
@@ -873,26 +883,23 @@ void serial_putch(char ch,
   int tcpip_queue_2_app(char *buffer, // Where to return the bytes
                         int   length)  // Maximum transfer size
   {
-    int bytes_moved;
+    int bytes_moved = 0;
 
-    bytes_moved = 0;
-    if ( in_buffer.out == in_buffer.in )
+    if ( queue_lock == NULL )          // Not set up yet (start up)
     {
-      return 0; // Nothing waiting for us
+      return 0;
     }
 
-    while ( length )
+    xSemaphoreTake(queue_lock, portMAX_DELAY);
+    while ( (length != 0) && (in_buffer.out != in_buffer.in) )
     {
-      *buffer = in_buffer.queue[in_buffer.out];
+      *buffer       = in_buffer.queue[in_buffer.out];
+      in_buffer.out = (in_buffer.out + 1) % sizeof(in_buffer.queue);
       buffer++;
       length--;
       bytes_moved++;
-      in_buffer.out = (in_buffer.out + 1) % sizeof(in_buffer.queue);
-      if ( in_buffer.out == in_buffer.in )
-      {
-        break; // Reached the end
-      }
     }
+    xSemaphoreGive(queue_lock);
 
     return bytes_moved;
   }
@@ -915,21 +922,35 @@ void serial_putch(char ch,
   int tcpip_socket_2_queue(char *buffer, // Where to return the bytes
                            int   length)  // Maximum transfer size
   {
-    int bytes_moved;
+    int bytes_moved = 0;
+    int next;
+    bool overrun = false;
 
-    bytes_moved = 0;
-    while ( length )
+    if ( queue_lock == NULL )          // Not set up yet (start up)
     {
+      return 0;
+    }
+
+    xSemaphoreTake(queue_lock, portMAX_DELAY);  // The TCP connections and the web servers all write here
+    while ( length != 0 )
+    {
+      next = (in_buffer.in + 1) % sizeof(in_buffer.queue);
+      if ( next == in_buffer.out )              // Full, drop the rest rather than lose what is waiting
+      {
+        overrun = true;
+        break;
+      }
       in_buffer.queue[in_buffer.in] = *buffer;
+      in_buffer.in                  = next;
       buffer++;
       length--;
       bytes_moved++;
-      in_buffer.in = (in_buffer.in + 1) % sizeof(in_buffer.queue);
-      if ( in_buffer.out == in_buffer.in )
-      {
-        DLT(DLT_CRITICAL, SEND(CONSOLE, sprintf(_xs, "TCPIP input queue overrun\r\n");)) // Reached the end
-        break;
-      }
+    }
+    xSemaphoreGive(queue_lock);
+
+    if ( overrun )                              // Report it after releasing the queue
+    {
+      DLT(DLT_CRITICAL, SEND(CONSOLE, sprintf(_xs, "TCPIP input queue overrun\r\n");))
     }
 
     return bytes_moved;
