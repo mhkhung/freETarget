@@ -63,8 +63,12 @@ class Runtime:
         config.write_text('{"autoupdate":false}\n')
         (RUNTIME / (self.state + "-emulator.log")).write_text("")
         command = [str(binary), "--chip", "esp32s3", "--firmware", str(self.flash),
-                   "--skip-rom", "--skip-bootloader",
-                   "--batch-size", "16",
+                   # Boot through the real ROM and 2nd-stage bootloader.
+                   # Instructions per core between event steps: small enough
+                   # for sub-3 us sensor edges, but esp-emu v1.2.0 faults
+                   # starting CPU1 from the ROM at 16 or fewer (read16 unmapped
+                   # 0x7FFFFFFF in start_other_core). 32 boots; 64 adds margin.
+                   "--batch-size", "64",
                    "--elf", str(RUNTIME / "source/build/freeETarget.elf"),
                    "--config", str(config), "--save-state", "--log-color", "never",
                    "--log-file", str(RUNTIME / (self.state + "-emulator.log")),

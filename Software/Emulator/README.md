@@ -34,10 +34,11 @@ The top overview lists every scored series with ten shot scores and both
 totals. Select its series label or an individual score to review it. A clock
 alongside shows local time and the live session timer (practice elapsed time,
 or sighting/match time remaining), including while reviewing older shots.
-All displayed/exported positions and click coordinates use centre **(0, 0)**,
+All displayed positions and click coordinates use centre **(0, 0)**,
 positive X to the right, and **negative Y above centre**. The firmware's existing
 positive-up wire/journal coordinates are converted at the display boundary;
-saved shots and the hardware protocol retain their original convention.
+saved shots, the hardware protocol and the CSV export keep positive-up Y, so
+exported files match the journal and the PC client.
 You can also open **http://127.0.0.1:18000/** directly. The emulator build's page
 connects to WebSockets on port 18080 automatically; no `?ws=` parameter is needed.
 
@@ -99,10 +100,16 @@ rearm after ringing before accepting another shot.
 
 ## Simulation boundary
 
-The emulator loads the application directly using `--skip-rom` and
-`--skip-bootloader`. The normal bootloader handoff faults in esp-emu v1.2.0
-with the expanded embedded athlete page. ROM/bootloader behavior and flash
-boot validation are therefore outside this fixture's coverage.
+The emulator boots like hardware: the real ESP32-S3 ROM runs Espressif's
+2nd-stage bootloader, which reads the partition table, validates the factory
+image and starts the application.
+
+`--batch-size 64` sets how many instructions each core runs between event
+steps, which bounds how late a sensor edge is applied (about 2 µs observed).
+Do not lower it to 16 or below: esp-emu v1.2.0 then faults while the ROM starts
+the second core (`Bus fault: read16 unmapped 0x7FFFFFFF` in `start_other_core`,
+right after "Loaded app"). With `--skip-rom` the fault only appears at batch
+size 1, so it is an emulator race, not a firmware or page-size problem.
 
 **The oscillator electrical startup self-test (`POST_counters`) is bypassed.**
 The isolated build links `firmware/board_boot.c` to replace only that test.

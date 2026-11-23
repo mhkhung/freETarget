@@ -302,7 +302,8 @@ function addEvent(d, m) {
     d.modes.push({ type: m.session_type, utc: m.utc, change: m.change, seq: m.seq });
   } else if ("shot" in m) {
     // Firmware/journal coordinates are positive-up. Convert once at the
-    // boundary; drawing, text, statistics and CSV all use negative-up Y.
+    // boundary; drawing, text and statistics use negative-up Y. The CSV
+    // converts back so exports match the journal and the PC client.
     d.shots.push({ seq: m.seq, fw: m.shot, type: m.session_type & ~1, x: m.x, y: -m.y, miss: !!m.miss, utc: m.utc || 0, clock: m.clock });
     if (m.athelete) d.athlete = m.athelete;
   }
@@ -786,7 +787,7 @@ $("csv").onclick = () => {
   const rows = [["session", "shot", "seq", "type", "x_mm", "y_mm", "r_mm", "direction", "score", "decimal", "inner_ten", "miss", "time"]];
   for (const s of d.shots) {
     rows.push([d.session, s.label, s.seq, s.type === SIGHT ? "sighter" : s.type === MATCH ? "match" : "practice",
-      s.miss ? "" : s.x.toFixed(2), s.miss ? "" : s.y.toFixed(2), s.miss ? "" : s.r.toFixed(2), arrow(s), s.int, s.dec.toFixed(1),
+      s.miss ? "" : s.x.toFixed(2), s.miss ? "" : (-s.y).toFixed(2), s.miss ? "" : s.r.toFixed(2), arrow(s), s.int, s.dec.toFixed(1),
       s.inner ? 1 : 0, s.miss ? 1 : 0, s.utc ? new Date(s.utc * 1000).toISOString() : ""]);
   }
   const blob = new Blob([rows.map((r) => r.join(",")).join("\n") + "\n"], { type: "text/csv" });

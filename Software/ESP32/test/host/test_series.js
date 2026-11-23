@@ -241,7 +241,7 @@ function page() {
   p.get("csv").click();
   const csv = p.downloads[0].trim().split("\n").map(row => row.split(","));
   assert.equal(csv[0][5], "y_mm");
-  assert.equal(csv[1][5], "-6.00");
+  assert.equal(csv[1][5], "6.00"); // Exports keep the firmware's positive-up Y, like the journal and PC client.
   assert.equal(p.run('arrow({x: 0, y: -10})'), "↑");
   assert.equal(p.run('arrow({x: 0, y: 10})'), "↓");
   assert.equal(p.run('arrow({x: -10, y: 0})'), "←");
