@@ -357,10 +357,10 @@ static bool send_hello(int fd)
   target_name(name);
   snprintf(text, sizeof(text), "{\"hello\":\"freETarget\", \"version\":%s, \"name\":\"%.60s\", \"session\":%u, \"next_seq\":%u, "
                                "\"utc\":%lu, \"clock\":\"%s\", \"target\":%d, \"athelete\":\"%.60s\", \"event\":\"%.60s\", "
-                               "\"target_name\":\"%.60s\", \"session_type\":%d}",
+                               "\"target_name\":\"%.60s\", \"session_type\":%d, \"session_open\":%s}",
            SOFTWARE_VERSION, name, shot_journal_session(), shot_journal_next_seq(),
            (source == JRNL_SOURCE_NONE) ? 0ul : (unsigned long)now, wall_clock_source_name(source), http_target_type(),
-           json_athlete, json_event, json_target_name, shot_journal_session_type());
+           json_athlete, json_event, json_target_name, shot_journal_session_type(), shot_journal_session_open() ? "true" : "false");
   return send_text(fd, text, strlen(text));
 }
 
@@ -387,8 +387,9 @@ static bool send_event(int fd, const shot_journal_event_t *ev, unsigned int hist
   else
   {
     snprintf(text + used, sizeof(text) - used - 2, "\"session\":%u, \"session_type\":%u, \"seq\":%u, \"change\":\"%s\", "
-             "\"target\":%u, \"utc\":%u", ev->session, ev->session_type, ev->seq, (ev->kind == JRNL_SESSION) ? "new" : "mode",
-             ev->target, ev->utc);
+             "\"target\":%u, \"utc\":%u, \"reason\":\"%s\"", ev->session, ev->session_type, ev->seq,
+             (ev->kind == JRNL_SESSION) ? "new" : (ev->kind == JRNL_END) ? "end" : "mode", ev->target, ev->utc,
+             (ev->kind != JRNL_END) ? "" : (ev->reason == JRNL_END_IDLE) ? "idle" : "command");
   }
   used           = strlen(text);
   text[used]     = '}';
@@ -430,9 +431,9 @@ static bool send_sessions(int fd, unsigned int max)
   {
     used += snprintf(text + used, size - used,
                      "%s{\"session\":%u, \"first_seq\":%u, \"last_seq\":%u, \"shots\":%u, \"sighters\":%u, \"target\":%u, "
-                     "\"session_type\":%u, \"first_utc\":%u, \"last_utc\":%u}",
+                     "\"session_type\":%u, \"first_utc\":%u, \"last_utc\":%u, \"ended\":%s}",
                      (i == 0) ? "" : ", ", list[i].session, list[i].first_seq, list[i].last_seq, list[i].shots, list[i].sighters,
-                     list[i].target, list[i].session_type, list[i].first_utc, list[i].last_utc);
+                     list[i].target, list[i].session_type, list[i].first_utc, list[i].last_utc, list[i].ended ? "true" : "false");
   }
   snprintf(text + used, size - used, "]}");
 

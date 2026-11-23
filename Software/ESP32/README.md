@@ -54,8 +54,12 @@ power loss.
 - **Sessions:** `{"SESSION":0}` starts a new session but does not erase the
   saved shots. After a restart the target resumes the last session, including
   sighters or match, and reconnecting clients receive that session's shots.
+- **Ending a session:** `{"SESSION_END":0}` (the page's **End session**), a new
+  session, or an hour without shots ends the current session. The next shot
+  then starts a new one, so the next athlete never continues it. An ended
+  session is not resumed at power-up and not replayed to clients that connect.
 - **Privacy:** the athlete's name (`{"ATHLETE":...}`) is kept in RAM only. It is
-  not saved to flash or the journal.
+  not saved to flash or the journal, and is cleared when a session ends.
 - **Status:** `{"ECHO":0}` shows a `JOURNAL` line.
 
 **Upgrading existing units:** an OTA update cannot change the partition table.

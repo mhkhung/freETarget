@@ -931,6 +931,65 @@ static void test_target(void)
   sim_free(f);
 }
 
+static void test_end_session(void)
+{
+  sim_flash_t *f = sim_new(4);
+  journal_t    j;
+  sim_clock_t  c;
+  jrnl_entry_t e;
+  jrnl_iter_t  it;
+  int          n;
+
+  printf("ending a session\n");
+  power_up(&j, f, &c);
+  CHECK(!j.session_open);
+  CHECK(journal_end_session(&j, JRNL_END_COMMAND) == JRNL_OK);   // Nothing to end
+  CHECK(j.next_seq == 1);                                         // and nothing written
+
+  journal_set_target(&j, 110);
+  CHECK(journal_new_session(&j, 2) == JRNL_OK);
+  CHECK(j.session_open);
+  e = make_shot(1);
+  CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+  CHECK(journal_end_session(&j, JRNL_END_IDLE) == JRNL_OK);
+  CHECK(!j.session_open);
+  CHECK(j.newest.kind == JRNL_END);
+  CHECK(j.newest.info.reason == JRNL_END_IDLE);
+  CHECK(j.newest.info.target == 110);
+  CHECK(j.newest.session == 1);
+  CHECK(journal_end_session(&j, JRNL_END_COMMAND) == JRNL_OK);   // Already ended: no second entry
+  CHECK(j.newest.info.reason == JRNL_END_IDLE);
+
+  c.uptime = 50;                                                  // A clock entry after the end must not reopen it
+  set_clock(&j, &c, 1800000000u, JRNL_SOURCE_NTP);
+  power_up(&j, f, &c);
+  CHECK(j.session == 1);
+  CHECK(!j.session_open);
+
+  e = make_shot(2);                                               // The next shot starts session 2
+  CHECK(journal_append_shot(&j, &e) == JRNL_OK);
+  CHECK(e.session == 2);
+  CHECK(e.shot == 0);
+  CHECK(j.session_open);
+  power_up(&j, f, &c);
+  CHECK(j.session == 2);
+  CHECK(j.session_open);
+  CHECK(j.session_shots == 1);
+
+  CHECK(journal_end_session(&j, JRNL_END_COMMAND) == JRNL_OK);
+  CHECK(journal_set_mode(&j, 4) == JRNL_OK);                      // A mode change after the end also starts one
+  CHECK(j.session == 3);
+  CHECK(j.session_open);
+
+  journal_iter_after(&j, &it, 0);                                 // Two end entries in all
+  for ( n = 0; journal_next(&j, &it, &e); )
+  {
+    n += (e.kind == JRNL_END);
+  }
+  CHECK(n == 2);
+  sim_free(f);
+}
+
 int main(void)
 {
   test_crc();
@@ -951,6 +1010,7 @@ int main(void)
   test_follow();
   test_follow_overrun();
   test_target();
+  test_end_session();
 
   printf("\n%d checks, %d failures\n", checks, failures);
   return failures == 0 ? 0 : 1;

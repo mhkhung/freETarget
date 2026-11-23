@@ -45,7 +45,8 @@
  *                  the firmware version, target name, current session,
  *                  the seq the next entry will get ("next_seq"), and the
  *                  current target type, session type, athlete, event and
- *                  target name.  If
+ *                  target name, and "session_open" (false once the
+ *                  session has ended).  If
  *                  next_seq is not greater than the last seq a client
  *                  saw, the journal was erased: start over with
  *                  {"AFTER":0}.
@@ -54,6 +55,10 @@
  *    "target":110, "utc":1795000000}
  *                  A session started ("new") or switched between
  *                  sighters (2) and match (4) ("mode"); 0 is practice.
+ *                  {"change":"end", "reason":"command"|"idle"} marks the
+ *                  end of the session: by {"SESSION_END":0} or after an
+ *                  hour without activity.  The next shot starts a new
+ *                  session.
  *                  "target" is the target type when it happened
  *                  (100 air pistol, 110 air rifle, 500 50 m pistol,
  *                  510 50 m rifle, +1 for practice; 0 unknown) and "utc"

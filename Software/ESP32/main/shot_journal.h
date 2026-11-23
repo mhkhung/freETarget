@@ -22,6 +22,8 @@
 #include "freETarget.h"
 #include "journal.h"
 
+#define SESSION_IDLE_S (60 * 60)                                    // A session with no activity for this long is ended
+
 typedef bool (*shot_journal_cb_t)(shot_record_t *shot, void *ctx); // Return false to stop the replay
 typedef void (*shot_journal_notify_t)(void);                        // Called after every new entry
 
@@ -40,7 +42,8 @@ typedef struct
   unsigned int  seq;
   unsigned int  session;
   unsigned int  session_type;   // SESSION_xxx (without SESSION_VALID)
-  unsigned int  target;         // JRNL_SESSION / JRNL_MODE: target type code (0 = unknown)
+  unsigned int  target;         // JRNL_SESSION / JRNL_MODE / JRNL_END: target type code (0 = unknown)
+  unsigned int  reason;         // JRNL_END: JRNL_END_xxx
   unsigned int  utc;            // Unix time of the entry (0 = unknown)
   shot_record_t shot;           // JRNL_SHOT only
 } shot_journal_event_t;
@@ -59,6 +62,7 @@ typedef struct
   unsigned int session_type;    // Latest SESSION_xxx (without SESSION_VALID)
   unsigned int first_utc;       // Unix time of the first and last entries (0 = unknown)
   unsigned int last_utc;
+  bool         ended;           // The session was ended (command or idle)
 } shot_journal_summary_t;
 
 void shot_journal_init(void);                                       // Open the journal, call once at start up
@@ -67,6 +71,9 @@ int  shot_journal_session_type(void);                               // Session t
 void shot_journal_record(shot_record_t *shot);                      // Save a shot, sets shot->shot, seq, utc and clock
 void shot_journal_new_session(int session_type);                    // A new session was started
 void shot_journal_set_mode(int session_type);                       // Sighters / match changed
+void shot_journal_end_session(int reason);                          // End the session (JRNL_END_xxx); the next shot starts a new one
+bool shot_journal_session_open(void);                               // false before the first session and after it ended
+void shot_journal_tick(void);                                       // Call every few seconds: ends a session idle for SESSION_IDLE_S
 void shot_journal_clock_set(uint32_t unix_time, uint32_t uptime, int source); // The wall clock was set
 uint32_t shot_journal_last_ntp_time(void);                          // Newest NTP time in the journal (0 = none)
 int  shot_journal_replay_session(shot_journal_cb_t f, void *ctx);   // Replay the current session, returns the count

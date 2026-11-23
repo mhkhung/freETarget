@@ -45,6 +45,8 @@ static StaticSemaphore_t       lock_buffer;
 static bool                    resumed;             // A session was recovered at start up
 static unsigned int            unjournaled_shots;   // Shot counter if the journal could not be opened
 static shot_journal_notify_t   notify;              // Told about every new entry
+static uint32_t                last_activity;       // Uptime (s) of the latest shot or session change in this power up
+static bool                    active_this_boot;    // There was some
 
 /*----------------------------------------------------------------
  *
@@ -104,6 +106,12 @@ static void take(void)
 static void give(void)
 {
   xSemaphoreGive(lock);
+}
+
+static void note_activity(void)         // A shot or session change: restart the idle time
+{
+  last_activity    = wall_clock_uptime();
+  active_this_boot = true;
 }
 
 static void give_and_notify(void)       // Release the journal after writing, then tell the listener
@@ -195,7 +203,7 @@ void shot_journal_init(void)
     return;
   }
 
-  resumed = (journal.session != 0);
+  resumed = (journal.session != 0) && journal.session_open;   // An ended session is not resumed
   DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "Shot journal: %s, %lu entries, %lu damaged, session %lu with %u shots, next seq %lu",
                                       (partition != NULL) ? "flash" : "RAM", (unsigned long)journal.entries,
                                       (unsigned long)journal.bad_entries, (unsigned long)journal.session,
@@ -280,9 +288,14 @@ void shot_journal_record(shot_record_t *shot)
   }
 
   take();
+  if ( !journal.session_open )                       // This shot starts a new session: record its target face
+  {
+    journal_set_target(&journal, (uint16_t)http_target_type());
+  }
   status = journal_append_shot(&journal, &entry);
   time   = journal_entry_time(&journal, &entry, &source);
   give_and_notify();
+  note_activity();
 
   shot->shot    = entry.shot;
   shot->seq     = entry.seq;
@@ -315,6 +328,7 @@ void shot_journal_new_session(int session_type)
   journal_set_target(&journal, (uint16_t)http_target_type()); // Remember which target face this session uses
   status = journal_new_session(&journal, (uint8_t)session_type);
   give_and_notify();
+  note_activity();
 
   if ( status != JRNL_OK )
   {
@@ -335,10 +349,102 @@ void shot_journal_set_mode(int session_type)
   journal_set_target(&journal, (uint16_t)http_target_type());
   status = journal_set_mode(&journal, (uint8_t)session_type);
   give_and_notify();
+  note_activity();
 
   if ( status != JRNL_OK )
   {
     DLT(DLT_CRITICAL, SEND(CONSOLE, sprintf(_xs, "Session type could not be saved (%d)", status);))
+  }
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: shot_journal_end_session
+ *
+ * @brief:    End the current session
+ *
+ *----------------------------------------------------------------
+ *
+ * The next shot starts a new session (as practice), so the next
+ * athlete never continues this one.  Clients that connect later get
+ * no replay of it.
+ *
+ *--------------------------------------------------------------*/
+void shot_journal_end_session(int reason)
+{
+  int status;
+
+  json_session_type = SESSION_EMPTY;     // The next session starts as practice
+  json_athlete[0]   = 0;                 // and does not carry this athlete's name
+  unjournaled_shots = 0;
+  if ( !journal.is_open || !journal.session_open )
+  {
+    return;
+  }
+
+  take();
+  status = journal_end_session(&journal, (uint8_t)reason);
+  give_and_notify();
+
+  DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "Session %lu ended (%s)", (unsigned long)journal.session,
+                                      (reason == JRNL_END_IDLE) ? "no activity" : "by a client");))
+  if ( status != JRNL_OK )
+  {
+    DLT(DLT_CRITICAL, SEND(CONSOLE, sprintf(_xs, "Session end could not be saved (%d)", status);))
+  }
+}
+
+bool shot_journal_session_open(void)
+{
+  return journal.is_open && journal.session_open;
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: shot_journal_tick
+ *
+ * @brief:    End the session after SESSION_IDLE_S without activity
+ *
+ *----------------------------------------------------------------
+ *
+ * Within this power up the idle time is measured with the uptime.  For
+ * a session resumed at power up it is at least the uptime, and more if
+ * the clock shows the last entry was written long before.
+ *
+ *--------------------------------------------------------------*/
+void shot_journal_tick(void)
+{
+  uint32_t uptime = wall_clock_uptime();
+  uint32_t idle;
+  uint32_t last;
+  uint32_t now;
+  uint8_t  source;
+
+  if ( !shot_journal_session_open() )
+  {
+    return;
+  }
+
+  if ( active_this_boot )
+  {
+    idle = uptime - last_activity;
+  }
+  else
+  {
+    idle = uptime;
+    take();
+    last = journal_entry_time(&journal, &journal.newest, NULL);
+    give();
+    now = wall_clock_now(&source);
+    if ( (source != JRNL_SOURCE_NONE) && (last != JRNL_TIME_UNKNOWN) && (now > last) && ((now - last) > idle) )
+    {
+      idle = now - last;
+    }
+  }
+
+  if ( idle >= SESSION_IDLE_S )
+  {
+    shot_journal_end_session(JRNL_END_IDLE);
   }
 }
 
@@ -392,7 +498,7 @@ int shot_journal_replay_session(shot_journal_cb_t f, void *ctx)
   uint32_t      time   = JRNL_TIME_UNKNOWN;
   uint8_t       source = JRNL_SOURCE_NONE;
 
-  if ( !journal.is_open )
+  if ( !journal.is_open || !journal.session_open )   // An ended session belongs to the last athlete: replay nothing
   {
     return 0;
   }
@@ -509,7 +615,7 @@ bool shot_journal_cursor_next(shot_journal_cursor_t *c, shot_journal_event_t *ev
       return false;
     }
 
-    if ( (entry.kind == JRNL_SHOT) || (entry.kind == JRNL_SESSION) || (entry.kind == JRNL_MODE) )
+    if ( (entry.kind == JRNL_SHOT) || (entry.kind == JRNL_SESSION) || (entry.kind == JRNL_MODE) || (entry.kind == JRNL_END) )
     {
       break;                                          // Clock settings are not reported
     }
@@ -520,6 +626,7 @@ bool shot_journal_cursor_next(shot_journal_cursor_t *c, shot_journal_event_t *ev
   ev->session      = entry.session;
   ev->session_type = entry.session_type & ~SESSION_VALID;
   ev->target       = (entry.kind == JRNL_SHOT) ? 0 : entry.info.target;
+  ev->reason       = (entry.kind == JRNL_END) ? entry.info.reason : 0;
   ev->utc          = (time == JRNL_TIME_UNKNOWN) ? 0 : time;
   if ( entry.kind == JRNL_SHOT )
   {
@@ -608,9 +715,13 @@ int shot_journal_sessions(shot_journal_summary_t *list, int max)
         s->sighters++;
       }
     }
-    else if ( ev->target != 0 )
+    else
     {
-      s->target = ev->target;
+      if ( ev->target != 0 )
+      {
+        s->target = ev->target;
+      }
+      s->ended = (ev->kind == JRNL_END);
     }
   }
   free(ev);

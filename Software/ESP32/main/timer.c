@@ -28,6 +28,7 @@
 #include "token.h"
 #include "timer.h"
 #include "dac.h"
+#include "shot_journal.h"
 
 /*
  * Definitions
@@ -79,6 +80,7 @@ static synchronous_task_t task_list[] = {
     {BAND_500ms,  toggle_status_LEDs       }, // Blink the LEDs
     {BAND_1000ms, check_12V                }, // Monitor the 12V supply
     {BAND_1000ms, check_new_connection     }, // Check for a new WiFi connection
+    {BAND_1000ms * 10, shot_journal_tick   }, // End a session nobody has used for an hour
     {BAND_60s,    watchdog                 }, // Watchdog monitor
     {0,           0                        }
 };

@@ -234,6 +234,7 @@ void         timed_event_task(void);              // Run the Rapid Fire state ma
 sensor_ID_t *find_sensor(unsigned int run_mask);  // Locate the sensor settings for the run_latch
 void         start_new_session(int session_type); // Start a new shooting session
 void         power_up_session(void);              // Resume the saved session after a restart
+void         end_session(int unused);             // {"SESSION_END":0}: end the session
 bool         prompt_for_confirm(void);            // Prompt for a confirmation
 
 #endif

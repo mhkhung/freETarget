@@ -172,6 +172,7 @@ int journal_open(journal_t *j, const jrnl_flash_t *flash)
   uint16_t     max_shot  = 0;
   bool         any_shots = false;
   uint32_t     target_seq = 0;
+  bool         ended      = false;
 
   if ( (j == NULL) || (flash == NULL) || (flash->read == NULL) || (flash->write == NULL) || (flash->erase == NULL) )
   {
@@ -238,6 +239,7 @@ int journal_open(journal_t *j, const jrnl_flash_t *flash)
    * Recover the state from the newest entry
    */
   read_slot(j, max_slot, &entry);
+  j->newest            = entry;
   j->head              = (max_slot + 1) % j->slots;
   j->next_seq          = max_seq + 1;
   j->session           = entry.session;
@@ -266,6 +268,11 @@ int journal_open(journal_t *j, const jrnl_flash_t *flash)
       j->target  = entry.info.target;
     }
 
+    if ( entry.kind == JRNL_END )                                     // Clock entries may follow it, so look for it anywhere
+    {
+      ended = true;
+    }
+
     if ( entry.kind == JRNL_SHOT )
     {
       if ( !any_shots || (entry.shot > max_shot) )
@@ -277,6 +284,7 @@ int journal_open(journal_t *j, const jrnl_flash_t *flash)
   }
 
   j->session_shots = any_shots ? (uint16_t)(max_shot + 1) : 0;
+  j->session_open  = (j->session != 0) && !ended;
   j->boot_seq      = j->next_seq;
   j->is_open       = true;
 
@@ -320,6 +328,7 @@ static int write_entry(journal_t *j, jrnl_entry_t *entry)
   entry->seq     = j->next_seq++;
   entry->crc     = journal_crc32(entry, CRC_LENGTH);
   note_time(j, entry);
+  j->newest      = *entry;
 
   for ( tries = 0; tries != j->slots; tries++ )
   {
@@ -397,8 +406,49 @@ int journal_new_session(journal_t *j, uint8_t session_type)
   j->session_start_seq = entry.seq;
   j->session_shots     = 0;
   j->session_type      = session_type;
+  j->session_open      = true;
 
   return status;
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: journal_end_session
+ *
+ * @brief:    End the current session
+ *
+ * @return:   JRNL_OK, or an error code
+ *
+ *----------------------------------------------------------------
+ *
+ * Nothing is written if no session is open.  The next shot or
+ * session type change starts a new session.
+ *
+ *--------------------------------------------------------------*/
+int journal_end_session(journal_t *j, uint8_t reason)
+{
+  jrnl_entry_t entry;
+
+  if ( (j == NULL) || !j->is_open )
+  {
+    return JRNL_ERR_NOT_OPEN;
+  }
+
+  if ( !j->session_open )
+  {
+    return JRNL_OK;
+  }
+
+  memset(&entry, 0, sizeof(entry));
+  entry.kind         = JRNL_END;
+  entry.session      = j->session;
+  entry.shot         = j->session_shots;
+  entry.session_type = j->session_type;
+  entry.info.target  = j->target;
+  entry.info.reason  = reason;
+  j->session_open    = false;
+
+  return write_entry(j, &entry);
 }
 
 /*----------------------------------------------------------------
@@ -417,7 +467,7 @@ int journal_set_mode(journal_t *j, uint8_t session_type)
     return JRNL_ERR_NOT_OPEN;
   }
 
-  if ( j->session == 0 )                                              // No session yet, start one
+  if ( !j->session_open )                                             // No session, or it has ended: start one
   {
     return journal_new_session(j, session_type);
   }
@@ -469,7 +519,7 @@ int journal_append_shot(journal_t *j, jrnl_entry_t *entry)
     return JRNL_ERR_NOT_OPEN;
   }
 
-  if ( j->session == 0 )                                              // First shot ever, start a session
+  if ( !j->session_open )                                             // First shot ever, or after the session ended
   {
     journal_new_session(j, entry->session_type);
   }

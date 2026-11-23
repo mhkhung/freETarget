@@ -80,6 +80,16 @@ vm.runInContext(`
   receive({ history: 999, session: 999, seq: 100, shot: 1, x: 0, y: 0 });
   assert.equal(past.shots.length, 2);
 
+  // The session ends: it stays on show, marked ended, until a shot starts the next one.
+  receive({ session: 2, seq: 12, change: "end", session_type: 4, target: 110, utc: 1795003600, reason: "idle" });
+  assert.equal(live.session, 2);
+  assert.equal(live.ended.reason, "idle");
+  assert.equal(live.modes.length, 1);                            // An end is not a session type change
+  receive({ session: 3, seq: 13, change: "new", session_type: 0, target: 100, utc: 1795007200 });
+  assert.equal(live.session, 3);
+  assert.equal(live.ended, undefined);
+  assert.equal(live.shots.length, 0);
+
   // A different session is allowed to start from a lower sequence number.
   const other = newSession(3);
   addEvent(other, { seq: 1, change: "new", session_type: 2, target: 110 });

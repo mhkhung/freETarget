@@ -106,6 +106,7 @@ const json_message_t JSON[] = {
     {SHOW + LOCK, "\"SENSOR\":",         (int *)&json_sensor_dia,     IS_FLOAT,               0,                  NONVOL_SENSOR_DIA,          232000,     0 },
     {SHOW,        "\"SN\":",             &json_serial_number,         IS_FIXED,               0,                  NONVOL_SERIAL_NO,           0xffff,     0 },
     {SHOW,        "\"SESSION\":",        &json_session_type,          IS_INT32,               &start_new_session, 0,                          0,          0 },
+    {HIDE,        "\"SESSION_END\":",    0,                           IS_INT32,               &end_session,       0,                          0,          0 },
     {SHOW + LOCK, "\"STEP_COUNT\":",     &json_step_count,            IS_INT32,               0,                  NONVOL_STEP_COUNT,          0,          0 },
     {SHOW + LOCK, "\"STEP_RAMP\":",      &json_step_ramp,             IS_INT32,               0,                  NONVOL_STEP_RAMP,           0,          4 },
     {SHOW,        "\"STEP_START\":",     &json_step_start,            IS_INT32,               0,                  NONVOL_STEP_START,          0,          4 },

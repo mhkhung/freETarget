@@ -34,6 +34,7 @@ main { padding: 16px; }
 .tools .what { color: var(--muted); margin-left: 4px; }
 .clock { font-size: 20px; font-weight: 700; margin: 0 0 4px; font-variant-numeric: tabular-nums; }
 .clock.over { color: var(--red); }
+.ended { color: var(--amber); font-weight: 600; margin: 4px 0 8px; }
 h1 { margin: 0; font-size: 22px; }
 .sub { color: var(--muted); margin: 2px 0 10px; }
 .latest { display: flex; align-items: baseline; gap: 14px; min-height: 76px; }
@@ -120,6 +121,7 @@ dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top
       <p class="clock" id="clock"></p>
       <h1 id="title">Waiting for the target</h1>
       <p class="sub" id="sub"></p>
+      <p class="ended hidden" id="ended"></p>
       <div class="latest" id="latest"></div>
       <p class="tally" id="tally"></p>
       <p class="line" id="series"></p>
@@ -129,6 +131,7 @@ dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top
       <div class="actions" id="liveonly">
         <button id="newSession" class="primary">New session…</button>
         <button id="mode" class="hidden"></button>
+        <button id="endSession" class="hidden" title="The athlete has finished: the next shot starts a new session">End session</button>
         <button id="sound" title="Speak each score (S)"></button>
       </div>
       <div class="actions">
@@ -221,7 +224,9 @@ function newSession(n) { return { session: n, target: 0, modes: [], shots: [], l
 function addEvent(d, m) {
   if (m.seq <= d.lastSeq) return;                              // A restarted history replay repeats its earlier entries
   d.lastSeq = m.seq;
-  if ("change" in m) {
+  if ("change" in m && m.change === "end") {
+    d.ended = { utc: m.utc, reason: m.reason };
+  } else if ("change" in m) {
     if (m.target) d.target = m.target;
     d.modes.push({ type: m.session_type, utc: m.utc, change: m.change, seq: m.seq });
   } else if ("shot" in m) {
@@ -410,8 +415,14 @@ function render() {
   $("stats").textContent = g ? [`${cur.label}: centre ${Math.abs(g.cx).toFixed(1)} mm ${g.cx >= 0 ? "right" : "left"}, ${Math.abs(g.cy).toFixed(1)} mm ${g.cy >= 0 ? "high" : "low"}`,
     g.n > 1 ? `group ${g.spread.toFixed(1)} mm, mean radius ${g.mean.toFixed(1)} mm` : ""].filter(Boolean).join(" · ") : "";
 
+  const ended = $("ended");
+  ended.classList.toggle("hidden", !d.ended);
+  if (d.ended) ended.textContent = `Session ended${d.ended.utc ? " at " + clockTime(d.ended.utc) : ""}` +
+    (d.ended.reason === "idle" ? " after an hour without shots" : "") + (past ? "" : ". The next shot starts a new session.");
+  $("endSession").classList.toggle("hidden", !!past || !d.session || !!d.ended);
+
   const mode = $("mode");
-  mode.classList.toggle("hidden", past || !a.match);
+  mode.classList.toggle("hidden", past || !a.match || !!d.ended);
   mode.textContent = a.type === MATCH ? "Back to sighters" : "Start match";
 
   $("sound").textContent = "Sound: " + (prefs.sound ? "on" : "off");
@@ -445,7 +456,7 @@ function renderClock() {
   const box = $("clock");
   const d = shown();
   box.classList.remove("over");
-  if (past || !d.session) { box.textContent = ""; return; }
+  if (past || !d.session || d.ended) { box.textContent = ""; return; }
   const type = sessionType(d), now = Date.now() / 1000;
   const since = (t) => [...d.modes].reverse().find((m) => m.type === t && m.utc)?.utc;
   let text = "";
@@ -551,9 +562,9 @@ function renderSessions() {
   const box = $("sessions");
   box.replaceChildren();
   if (!sessionsCache.length) { box.append(el("p", { class: "muted" }, "No sessions stored.")); return; }
-  for (const s of [...sessionsCache].reverse()) {
+  for (const s of [...sessionsCache].reverse().filter((x) => x.shots > 0 || x.session === live.session)) {
     const face = faceOf(s.target || 100);
-    const kind = s.session_type === MATCH ? "Match" : s.session_type === SIGHT ? "Sighters" : (s.target & 1 ? "Practice" : "Session");
+    const kind = s.session_type === MATCH ? "Match" : s.session_type === SIGHT ? "Sighters" : "Practice";
     const b = el("button");
     b.append(el("span", {}, `Session ${s.session} · ${s.target ? face.name : "target unknown"} · ${kind}` + (s.session === live.session ? " (current)" : "")),
       el("small", {}, `${dateTime(s.first_utc)} · ${s.shots} shot${s.shots === 1 ? "" : "s"}` + (s.sighters ? ` (${s.sighters} sighters)` : "")));
@@ -590,6 +601,9 @@ $("mode").onclick = () => {
   else if (confirm("Start the match? Shots after this count for score.")) send({ SESSION: MATCH });
 };
 $("print").onclick = () => window.print();
+$("endSession").onclick = () => {
+  if (confirm("End this session? The next shot will start a new one.")) send({ SESSION_END: 0 });
+};
 $("csv").onclick = () => {
   const d = shown(), a = analyse(d);
   const rows = [["session", "shot", "seq", "type", "x_mm", "y_mm", "r_mm", "direction", "score", "decimal", "inner_ten", "miss", "time"]];

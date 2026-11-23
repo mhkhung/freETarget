@@ -731,11 +731,29 @@ void start_new_session(int session_type) //
  * Otherwise start a new session as before.
  *
  *--------------------------------------------------------------*/
+/*----------------------------------------------------------------
+ *
+ * @function: end_session
+ *
+ * @brief:    {"SESSION_END":0}: the athlete has finished
+ *
+ *--------------------------------------------------------------*/
+void end_session(int unused)
+{
+  (void)unused;
+  shot_journal_end_session(JRNL_END_COMMAND);
+  clear_shot_queue();
+  set_session_timer(SESSION_EMPTY);
+}
+
 void power_up_session(void)
 {
-  if ( !shot_journal_resume() )          // Nothing saved
+  if ( !shot_journal_resume() )          // No open session: the first shot starts one
   {
-    start_new_session(SESSION_EMPTY);
+    event_override();
+    clear_shot_queue();
+    json_session_type = SESSION_EMPTY;
+    set_session_timer(SESSION_EMPTY);
     return;
   }
 
