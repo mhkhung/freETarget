@@ -613,7 +613,7 @@ function render() {
   }
   $("series").replaceChildren(...v.filter((entry) => entry.series !== undefined).map((entry) => {
     const i = v.indexOf(entry), t = total(entry.shots);
-    const button = el("button", { "aria-pressed": String(index === i), title: labelledTotal(t) }, `${entry.label} · ${t.dec.toFixed(1)} dec · ${t.int} int`);
+    const button = el("button", { "aria-pressed": String(index === i), title: labelledTotal(t) }, `${entry.label} · ${t.dec.toFixed(1)} (${t.int})`);
     button.onclick = () => { view = i; picked = null; render(); };
     return button;
   }));
@@ -1102,8 +1102,8 @@ function reportPanel(a, section) {
   thead.append(head);
   table.append(thead, body);
   const t = total(section.shots), run = total(section.running), scores = el("div");
-  scores.append(table, el("div", { class: "rtotal" }, `${t.int} (${t.dec.toFixed(1)})  ${t.x}X`),
-    el("div", { class: "rrun" }, `${section.role === "Sighters" ? "Sighters only" : section.role + " running"}  ${run.int} (${run.dec.toFixed(1)})`));
+  scores.append(table, el("div", { class: "rtotal" }, `${t.dec.toFixed(1)} (${t.int})  ${t.x}X`),
+    el("div", { class: "rrun" }, `${section.role === "Sighters" ? "Sighters only" : section.role + " running"}  ${run.dec.toFixed(1)} (${run.int})`));
   panel.append(title, plot, scores);
   return panel;
 }
@@ -1124,7 +1124,7 @@ function buildReport() {
     foot.append(el("span", {}, "X: inner ten · M: miss · Gap: time since the shot before (– unknown) · Plot numbers match the table · " +
       "Crosshair: average point · Y negative up"), el("span", {}, `Page ${n + 1}/${pages.length}`));
     page.append(head, el("p", {}, [athlete, `Session ${d.session}`, dateTime(d.modes[0]?.utc || d.shots[0]?.utc)].filter(Boolean).join(" · ")),
-      el("p", { class: "rsummary" }, `${count} · Score ${t.int} · Decimal ${t.dec.toFixed(1)} · ${t.x}X`),
+      el("p", { class: "rsummary" }, `${count} · Score ${t.dec.toFixed(1)} (${t.int}) · ${t.x}X`),
       el("p", {}, note), el("p", { class: "rmuted" }, timingText(timingStats(d.shots), d.shots) || "No shots."), grid, foot);
     return page;
   }));

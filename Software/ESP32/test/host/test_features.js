@@ -251,7 +251,7 @@ const shot = (p, seq, n, type, x = 0, y = 0, utc = 0) =>
   const [head, who, summary] = pages[0].children;
   assert.equal(head.children[0].textContent, "MATCH REPORT");
   assert.match(who.textContent, /^Sam · Session 4 · /);
-  assert.equal(summary.textContent, "23/60 match shots · Score 229 · Decimal 249.6 · 22X");
+  assert.equal(summary.textContent, "23/60 match shots · Score 249.6 (229) · 22X");
   const grid = pages[0].children[5], panels = grid.children;
   assert.equal(panels.length, 8);
   assert.match(panels[0].children[0].textContent, /^Sighters 1–3/);
@@ -262,7 +262,8 @@ const shot = (p, seq, n, type, x = 0, y = 0, utc = 0) =>
   assert.equal(rows[2].children[0].textContent, "23");
   assert.equal(rows[2].children[1].textContent, "9.8");
   assert.equal(rows[3].children[1].textContent, "–");
-  assert.equal(panels[3].children[2].children[2].textContent, "Match running  229 (249.6)");
+  assert.equal(panels[3].children[2].children[1].textContent, "31.6 (29)  2X");   // Decimal, then integer
+  assert.equal(panels[3].children[2].children[2].textContent, "Match running  249.6 (229)");
   assert.equal(panels[4].children.length, 0);                   // Empty slots keep the grid
   const plot = panels[1].children[1].children[0];
   assert.ok(plot.children.some((node) => node.tag === "circle" && node.attrs.fill === "#6b7379"));

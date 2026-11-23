@@ -19,6 +19,8 @@ const page = () => open(process.argv[2]);
   assert.equal(p.get("seriesCount").textContent, "10 / 10 shots");
   assert.equal(p.get("decimalTotal").textContent, "104.5");
   assert.equal(p.get("integerTotal").textContent, "100");
+  assert.equal(p.get("series").children[0].textContent, "Series 1 · 104.5 (100)");   // Decimal, then integer
+  assert.equal(p.get("series").children[0].attrs.title, "Decimal 104.5 · Integer 100");
   assert.equal(p.boardRows()[0].children[11].textContent, "100");
   assert.equal(p.boardRows()[0].children[12].textContent, "104.5");
   assert.match(p.boardRows()[0].children[1].textContent, /10\.9/);
