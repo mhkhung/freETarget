@@ -22,6 +22,8 @@
 #include <unistd.h>
 // #include <sys/param.h>
 #include "esp_http_server.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "esp_event.h"
 #include "esp_netif.h"
 #include "esp_tls.h"
@@ -51,6 +53,15 @@ esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err); // Cre
  *  Variables
  */
 static httpd_req_t *static_req = NULL; // Request pointer used inside of this file
+/*
+ * The JSON task writes command output to a /json request through
+ * http_send_string() while the web server task owns the request. This lock
+ * keeps the request from ending (and being freed) in the middle of a send:
+ * if /json stops waiting, the rest of the output is dropped, not sent to a
+ * finished request.
+ */
+static SemaphoreHandle_t static_req_lock = NULL;
+static StaticSemaphore_t static_req_lock_buffer;
 
 /*
  * Local functions
@@ -323,8 +334,14 @@ int get_url_arg(char *req_url,     // URL and arguements as from web page
  *------------------------------------------------------------*/
 void http_send_string_start(httpd_req_t *req)       // Start to send a string to the client
 {
+  if ( static_req_lock == NULL )                    // Port 80 runs one handler at a time, so this is made once
+  {
+    static_req_lock = xSemaphoreCreateMutexStatic(&static_req_lock_buffer);
+  }
 
+  xSemaphoreTake(static_req_lock, portMAX_DELAY);
   static_req = req;                                 // Remember who we are talking to
+  xSemaphoreGive(static_req_lock);
 
   return;
 }
@@ -334,48 +351,60 @@ void http_send_string(const char *str)              // String to send to the cli
   char *sout;                                       // Pointer to the output string
   int   i;
 
-  if ( static_req == NULL )                         // If the request pointer is not set
+  if ( static_req_lock == NULL )                    // No /json request has been made yet
   {
     return;
   }
 
-  i    = 0;
-  sout = (char *)str;                               // Point to the string to send
-  while ( *str != 0 )
+  xSemaphoreTake(static_req_lock, portMAX_DELAY);   // The request cannot end while we send
+  if ( static_req != NULL )                         // Only while a /json request is waiting
   {
-    if ( *str == '\n' )                             // If we have a new line
+    i    = 0;
+    sout = (char *)str;                             // Point to the string to send
+    while ( *str != 0 )
     {
-      httpd_resp_send_chunk(static_req, sout, i);   // Send out what we have so far
-      httpd_resp_send_chunk(static_req, "<br>", 4); // Send a CRLF to the client
-      i = 0;                                        // Reset the counter
-      str++;                                        // Move to the next character
-      sout = (char *)str;                           // Point to the string to send
+      if ( *str == '\n' )                           // If we have a new line
+      {
+        httpd_resp_send_chunk(static_req, sout, i); // Send out what we have so far
+        httpd_resp_send_chunk(static_req, "<br>", 4); // Send a CRLF to the client
+        i = 0;                                      // Reset the counter
+        str++;                                      // Move to the next character
+        sout = (char *)str;                         // Point to the string to send
+      }
+      else
+      {
+        i++;                                        // Move to the next character
+        str++;
+      }
     }
-    else
-    {
-      i++;                                          // Move to the next character
-      str++;
-    }
-  }
 
-  if ( i == 0 )                                     // If we have nothing to send
-  {
-    return;                                         // Nothing to do
+    if ( i != 0 )                                   // Anything left after the last new line
+    {
+      httpd_resp_send_chunk(static_req, sout, i);
+    }
   }
-  httpd_resp_send_chunk(static_req, sout, i);
+  xSemaphoreGive(static_req_lock);
+
+  return;
 }
 
 void http_send_string_end(httpd_req_t *req)         // Stop to send a string to the client
 {
-
   char str[1];                                      // Temporary string
 
+  if ( static_req_lock == NULL )
+  {
+    return;
+  }
+
+  xSemaphoreTake(static_req_lock, portMAX_DELAY);   // Wait for a send in progress to finish
   str[0] = 0;
   if ( static_req != NULL )                         // If the request pointer is not set
   {
     httpd_resp_send_chunk(static_req, str, 0);      // Send the string to the client
   }
   static_req = NULL;                                // Erase it
+  xSemaphoreGive(static_req_lock);
 
   return;
 }
