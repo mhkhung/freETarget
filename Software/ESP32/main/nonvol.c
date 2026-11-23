@@ -116,6 +116,7 @@ void read_nonvol(void)
         case IS_MFS:
           if ( JSON[i].non_vol != 0 )                    // Is persistent storage enabled?
           {
+            x = JSON[i].init_value;                      // Used if the setting was never saved
             nvs_get_i32(my_handle, JSON[i].non_vol, &x); // Read in the value
             *JSON[i].value = x;
           }
@@ -128,6 +129,7 @@ void read_nonvol(void)
         case IS_FLOAT:
           if ( JSON[i].non_vol != 0 )
           {
+            x = JSON[i].init_value;                      // Used if the setting was never saved (also 1000x)
             nvs_get_i32(my_handle, JSON[i].non_vol, &x); // Read in the value as an integer
             *(real_t *)(JSON[i].value) = (real_t)x / FLOAT_SCALE;
           }

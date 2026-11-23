@@ -61,7 +61,7 @@ const json_message_t JSON[] = {
     //  PS Value
     {HIDE,        "\"50M\"",             0,                           IS_VOID,                &set_50m,           0,                          0,          0 },
     {HIDE + LOCK, "\"ANGLE\":",          &json_sensor_angle,          IS_INT32,               0,                  NONVOL_SENSOR_ANGLE,        45,         0 },
-    {HIDE + LOCK, "\"ANGLE_OFFSET\":",   &json_sensor_angle_offset,   IS_FLOAT,               0,                  NONVOL_SENSOR_ANGLE_OFFSET, 0,          15},
+    {HIDE + LOCK, "\"ANGLE_OFFSET\":",   &json_sensor_angle_offset,   IS_FLOAT,               0,                  NONVOL_SENSOR_ANGLE_OFFSET, 0,          18},
     {SHOW + LOCK, "\"AUX_MODE\":",       &json_aux_mode,              IS_INT32,               0,                  NONVOL_AUX_PORT_ENABLE,     RS485,      6 },
     {HIDE,        "\"BYE\"",             0,                           IS_INT32,               &bye,               0,                          0,          0 },
     {HIDE,        "\"CAL\":",            0,                           IS_INT32,               &calibrate,         0,                          0,          0 },
@@ -743,8 +743,8 @@ static void set_50m(int x)
   json_paper_time = 0;
   nvs_set_i32(my_handle, NONVOL_PAPER_TIME, json_paper_time);
 
-  json_sensor_dia = 707 * 1000;
-  nvs_set_i32(my_handle, NONVOL_SENSOR_DIA, json_sensor_dia);
+  json_sensor_dia = 707.0;                                                 // mm
+  nvs_set_i32(my_handle, NONVOL_SENSOR_DIA, (int)(json_sensor_dia * FLOAT_SCALE)); // Stored as 1000x
 
   json_step_count = 0;
   nvs_set_i32(my_handle, NONVOL_STEP_COUNT, json_step_count);
