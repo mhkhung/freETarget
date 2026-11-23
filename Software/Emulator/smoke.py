@@ -6,6 +6,8 @@ import shutil
 import socket
 import subprocess
 import time
+import urllib.error
+import urllib.parse
 import urllib.request
 
 from runtime import Runtime
@@ -74,6 +76,32 @@ def main():
         with WebSocket(runtime.ws_url, timeout=10, headers=browser_headers) as browser:
             assert browser.receive()["hello"] == "freETarget"
         print("PASS: browser-sized HTTP and WebSocket headers, including a 3 KiB localhost cookie", flush=True)
+
+        def get_json(command):
+            url = runtime.page_url + "json?" + urllib.parse.quote(json.dumps(command), safe="")
+            try:
+                with urllib.request.urlopen(url, timeout=10) as response:
+                    return response.status, response.read().decode(errors="replace")
+            except urllib.error.HTTPError as error:
+                return error.code, error.read().decode(errors="replace")
+
+        status, text = get_json({"X_OFFSET": 3})
+        assert status == 405, (status, text)
+        status, text = get_json({"ECHO": 0})
+        # The listing's start: the emulator's fast virtual clock can end /json's wait before it is all sent.
+        assert status == 200 and '"NAME"' in text, (status, text[:200])
+        refused = urllib.request.Request(runtime.page_url + "json", data=b'{"X_OFFSET":3}', method="POST",
+                                         headers={"Content-Type": "text/plain"})
+        try:
+            urllib.request.urlopen(refused, timeout=10)
+            raise AssertionError("a text/plain POST must be refused")
+        except urllib.error.HTTPError as error:
+            assert error.code == 415, error.code
+        runtime.firmware_command({"X_OFFSET": 1.25})
+        with WebSocket(runtime.ws_url, timeout=10) as ws:
+            assert ws.receive()["x_offset"] == 1.25
+        runtime.firmware_command({"X_OFFSET": 0})
+        print("PASS: /json runs commands as a JSON POST; GET runs only ECHO, VERSION and MFS?", flush=True)
         shot_seqs = []
         pc_client = socket.create_connection(("127.0.0.1", runtime.tcp_port), timeout=10)  # The PC client's port
         with WebSocket(runtime.ws_url, timeout=10) as ws:

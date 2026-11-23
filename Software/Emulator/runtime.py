@@ -8,7 +8,6 @@ import subprocess
 import threading
 import time
 import urllib.request
-from urllib.parse import quote
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from board import Board
@@ -47,9 +46,11 @@ class Runtime:
         self.geometry_configured = False
 
     def firmware_command(self, obj):
-        """Use the stock synchronous endpoint so setup is complete before firing."""
-        command = quote(json.dumps(obj, separators=(",", ":")), safe="")
-        with urllib.request.urlopen(f"http://127.0.0.1:{self.http_port}/json?{command}", timeout=10) as response:
+        """POST to the stock synchronous /json endpoint so setup is complete before firing."""
+        request = urllib.request.Request(f"http://127.0.0.1:{self.http_port}/json", method="POST",
+                                         data=json.dumps(obj, separators=(",", ":")).encode(),
+                                         headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(request, timeout=10) as response:
             return response.read()
 
     def start(self):

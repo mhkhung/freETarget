@@ -665,6 +665,56 @@ int http_target_type(void)
 
 /*----------------------------------------------------------------
  *
+ * @function: json_read_only
+ *
+ * @brief:    True if a JSON command only reports and changes nothing
+ *
+ *----------------------------------------------------------------
+ *
+ * GET /json accepts only these, so a link or another web page cannot
+ * change the target; everything else must be a POST.
+ *
+ * The parser matches command names anywhere in its input, and reads '^'
+ * as '"', so this does not pair up quotes.  It removes each allowed name
+ * and then accepts only braces, separators and numbers.  Any other quote,
+ * '^' or letter could name another command, so it refuses those.
+ *
+ *--------------------------------------------------------------*/
+bool json_read_only(const char *command)
+{
+  static const char *const allowed[] = {"\"ECHO\"", "\"VERSION\"", "\"MFS?\"", NULL};
+  bool                     any       = false;
+  size_t                   length    = 0;
+  int                      i;
+
+  while ( *command != 0 )
+  {
+    for ( i = 0; allowed[i] != NULL; i++ )
+    {
+      length = strlen(allowed[i]);
+      if ( strncmp(command, allowed[i], length) == 0 )
+      {
+        break;
+      }
+    }
+    if ( allowed[i] != NULL )                          // An allowed command name
+    {
+      command += length;
+      any      = true;
+      continue;
+    }
+    if ( strchr("{}:, \t\r\n-.0123456789", *command) == NULL )
+    {
+      return false;                                    // Could be part of any other command
+    }
+    command++;
+  }
+
+  return any;
+}
+
+/*----------------------------------------------------------------
+ *
  * @function: squish
  *
  * @brief:    Reduce the uri to an argument

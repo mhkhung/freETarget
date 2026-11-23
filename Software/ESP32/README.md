@@ -164,3 +164,19 @@ The main page (`http://<target>/`) and `http://<target>:8080/live`, a small
 test page with a command line, both use this API. It is on port 8080 so that a
 `/json` request on port 80, which waits for its command to finish, never holds
 up the shots.
+
+## JSON commands over HTTP
+
+`http://<target>/json` runs one JSON command and returns its output as text.
+Commands that change the target must be a POST with the command as the body:
+
+```sh
+curl -H 'Content-Type: application/json' -d '{"X_OFFSET":0.5}' http://<target>/json
+```
+
+A web page from another site cannot send such a request without the target's
+permission, which it never gives, so a link or a page cannot change settings.
+For typing into a browser, a GET still works for the commands that only report:
+`/json?{"ECHO":0}`, `/json?{"VERSION":0}` and `/json?{"MFS?":0}`. Other commands
+sent as a GET get `405 Method Not Allowed`. A request waits until the previous
+command's output has finished (up to 5 seconds, then `503`).

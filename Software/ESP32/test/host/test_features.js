@@ -170,8 +170,11 @@ const shot = (p, seq, n, type, x = 0, y = 0, utc = 0) =>
 (async () => {
   const requests = [];
   let offsets = { x: 0.25, y: -0.5 }, locked = false;
-  const fetch = async (url) => {
-    const command = JSON.parse(decodeURIComponent(url.replace(/^\/json\?/, "")));
+  const fetch = async (url, options) => {
+    assert.equal(url, "/json");
+    assert.equal(options.method, "POST");                         // Commands are POSTed as JSON
+    assert.equal(options.headers["Content-Type"], "application/json");
+    const command = JSON.parse(options.body);
     requests.push(command);
     if ("X_OFFSET" in command) {
       if (locked) return { ok: true, text: async () => "\r\nInvalid input or locked: {...}\r\n" };

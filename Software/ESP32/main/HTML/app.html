@@ -979,8 +979,8 @@ globalThis.onbeforeprint = buildReport;                         // Also for the 
  * ---- Calibration ----
  * The target adds X_OFFSET and Y_OFFSET (mm, positive right and up) to every
  * new shot. The hello message carries them; older firmware is asked for an
- * ECHO. They are set through the /json command endpoint on this page's own
- * web server, whose reply says if the target is locked.
+ * ECHO. They are set with a POST to /json on this page's own web server,
+ * whose reply says if the target is locked.
  */
 let calib = null;                                                // { start: {x, y} | null, x, y, busy, note, error }
 const round2 = (n) => Math.round(n * 100) / 100;
@@ -989,7 +989,7 @@ function calibrationShift() {                                    // How far the 
   return { dx: calib.x - calib.start.x, dy: -(calib.y - calib.start.y) };   // Display Y is negative up
 }
 async function targetCommand(command) {
-  const reply = await fetch("/json?" + encodeURIComponent(JSON.stringify(command)));
+  const reply = await fetch("/json", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(command) });
   if (!reply.ok) throw new Error("HTTP " + reply.status);
   return reply.text();
 }

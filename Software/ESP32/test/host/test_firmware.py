@@ -45,7 +45,8 @@ def main():
         (build / "reduction_host.inc").write_text(source[source.index("#define FORCE_PAPER_MOVE"):reduction.end()])
         source = (MAIN / "helpers.c").read_text()
         helpers = []
-        for pattern in (r"^bool contains\(.*?^\}", r"^int http_target_type\(void\)\n\{.*?^\}"):
+        for pattern in (r"^bool contains\(.*?^\}", r"^int http_target_type\(void\)\n\{.*?^\}",
+                        r"^bool json_read_only\(const char \*command\)\n\{.*?^\}"):
             found = re.search(pattern, source, re.MULTILINE | re.DOTALL)
             if found is None:
                 raise RuntimeError("Could not find " + pattern)

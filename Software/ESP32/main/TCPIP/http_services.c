@@ -17,6 +17,7 @@
  *
  *-----------------------------------------------------*/
 #include <string.h>
+#include <strings.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <sys/param.h>
@@ -61,7 +62,8 @@ static esp_err_t service_get_help(httpd_req_t *req);                            
 static esp_err_t service_get_menu(httpd_req_t *req);                                   // Control back channel
 static esp_err_t service_get_who(httpd_req_t *req);                                    // Target information page
 static esp_err_t service_get_FreeETarget_png(httpd_req_t *req);                        // Icon for the FreeETarget page
-static esp_err_t service_get_json(httpd_req_t *req);                                   // Webb ased JSON interface
+static esp_err_t service_get_json(httpd_req_t *req);                                   // Read-only JSON commands (GET)
+static esp_err_t service_post_json(httpd_req_t *req);                                  // JSON commands (POST)
 static esp_err_t service_get_live(httpd_req_t *req);                                   // WebSocket test page
 static esp_err_t service_get_app(httpd_req_t *req);                                    // Athlete page
 static esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err);       // Create a URL not found handler
@@ -78,7 +80,8 @@ const my_uri_t uri_list[] = {
 
     {DEFAULT_HTTP_PORT, "Help menu",           URI("/help", service_get_help, NULL)                        },
     {DEFAULT_HTTP_PORT, "Target info",         URI("/who", service_get_who, NULL)                          },
-    {DEFAULT_HTTP_PORT, "JSON command line",   URI("/json", service_get_json, NULL)                        },
+    {DEFAULT_HTTP_PORT, "JSON status: ECHO, VERSION, MFS? (POST other commands)", URI("/json", service_get_json, NULL) },
+    {DEFAULT_HTTP_PORT, "",                    {.uri = "/json", .method = HTTP_POST, .handler = service_post_json, .user_ctx = NULL} },
     {DEFAULT_HTTP_PORT, "",                    URI("/favicon.ico", service_get_FreeETarget_png, NULL)      },
 
     {EVENT_HTTP_PORT,   "Target control menu", URI("/", service_get_menu, (void *)&event_menu_ctx)         }, // Control back channel
@@ -347,61 +350,140 @@ static esp_err_t service_get_help(httpd_req_t *req)
 
 /*----------------------------------------------------------------
  *
- * @function: service_get_json
+ * @function: service_get_json, service_post_json
  *
- * @brief:    Emulate the json commands over a USB or TCPIP connection
+ * @brief:    Run a JSON command and return its output
  *
  * @return:   esp_err_t, error type
  *
  *---------------------------------------------------------------
  *
- * The input from the client is of the form:
+ * Commands that change the target are a POST with the command as an
+ * application/json body:
  *
- * json?{"ECHO":1}
+ *   POST /json   {"X_OFFSET":0.5, "Y_OFFSET":-1}
  *
- * The function extracts the {"ECHO":1} and puts it into the
- * TCPIP queue.  Executing the vTaskDelay function transfers
- * control to json.c where the data is processed.
+ * A web page on another site cannot send that without the target's
+ * permission, which it never gives.  GET is kept for typing into a
+ * browser, but only for the commands that just report:
+ *
+ *   /json?{"ECHO":0}      /json?{"VERSION":0}      /json?{"MFS?":0}
+ *
+ * The command goes into the TCPIP queue and the JSON task runs it.  Its
+ * output comes back to this request through http_send_string().
  *
  *------------------------------------------------------------*/
-#define JSON_WAIT_MS 5000 // Longest a /json request waits for its command
+#define JSON_WAIT_MS  5000                          // Longest a /json request waits for its command
+#define JSON_POST_MAX CONFIG_HTTPD_MAX_URI_LEN      // Longest command (the same as a GET can carry)
 
-static esp_err_t service_get_json(httpd_req_t *req)
+static bool json_busy(void)                         // A command is queued or running
+{
+  return (serial_available(TCPIP) != 0) || ((run_state & IN_HTTP) != 0);
+}
+
+static esp_err_t run_json(httpd_req_t *req, char *command)
 {
   char my_name[SHORT_TEXT];                         // Target name
-  char argument[CONFIG_HTTPD_MAX_URI_LEN + 1];      // JSON command taken from the URI (never longer than the URI)
-  int  waited;                                      // ms waited for the command to finish
+  int  waited;                                      // ms waited
 
-  DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "service_get_json(%s)", req->uri);))
-  squish(req->uri, argument);                       // Go through the uri and keep the argument portion
-  tcpip_socket_2_queue(argument, strlen(argument)); // Put the data into the TCPIP queue
+  /*
+   * Let the previous command finish first, or the rest of its output
+   * would come back in this reply
+   */
+  for ( waited = 0; (waited < JSON_WAIT_MS) && json_busy(); waited += 10 )
+  {
+    vTaskDelay(TICK_10ms);
+  }
+  if ( json_busy() )
+  {
+    httpd_resp_set_status(req, "503 Service Unavailable");
+    httpd_resp_sendstr(req, "The target is busy with another command; try again.");
+    return ESP_OK;
+  }
+
+  tcpip_socket_2_queue(command, strlen(command));   // Put the data into the TCPIP queue
 
   /*
    * Set the header to indicate that this is a json request, then wait till it's done
    */
-  target_name(&my_name);       // Get the target name
+  target_name(&my_name);                            // Get the target name
   httpd_resp_set_hdr(req, "get_json", my_name);
-  http_send_string_start(req); // Start sending a string to the client
+  http_send_string_start(req);                      // Start sending a string to the client
 
   /*
    * Wait until the JSON task has read the command and finished with it.
-   * Its output comes back to this request through http_send_string().
    */
   for ( waited = 0; waited < JSON_WAIT_MS; waited += 10 )
   {
     vTaskDelay(TICK_10ms);
-    if ( (waited >= 50) && (serial_available(TCPIP) == 0) && ((run_state & IN_HTTP) == 0) )
+    if ( (waited >= 50) && !json_busy() )
     {
-      break;                   // Read and done
+      break;                                        // Read and done
     }
   }
 
-  http_send_string_end(req);   // Stop sending a string to the client
+  http_send_string_end(req);                        // Stop sending a string to the client
 
-  /*
-   * All done, return
-   */
   return ESP_OK;
+}
+
+static esp_err_t service_get_json(httpd_req_t *req)
+{
+  char argument[CONFIG_HTTPD_MAX_URI_LEN + 1];      // JSON command taken from the URI (never longer than the URI)
+
+  DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "service_get_json(%s)", req->uri);))
+  squish(req->uri, argument);                       // Go through the uri and keep the argument portion
+
+  if ( !json_read_only(argument) )
+  {
+    httpd_resp_set_status(req, "405 Method Not Allowed");
+    httpd_resp_set_hdr(req, "Allow", "POST");
+    httpd_resp_sendstr(req, "Only ECHO, VERSION and MFS? can be a GET. Send other commands as a POST "
+                            "with Content-Type: application/json.");
+    return ESP_OK;
+  }
+
+  return run_json(req, argument);
+}
+
+static esp_err_t service_post_json(httpd_req_t *req)
+{
+  char command[JSON_POST_MAX + 1];                  // The JSON command from the body
+  char type[48];                                    // Content-Type header
+  int  got;                                         // Bytes received so far
+  int  n;
+
+  DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "service_post_json(%d bytes)", (int)req->content_len);))
+
+  if ( (httpd_req_get_hdr_value_str(req, "Content-Type", type, sizeof(type)) != ESP_OK)
+       || (strncasecmp(type, "application/json", 16) != 0) )
+  {
+    httpd_resp_set_status(req, "415 Unsupported Media Type");
+    httpd_resp_sendstr(req, "Send the command with Content-Type: application/json.");
+    return ESP_OK;
+  }
+  if ( (req->content_len == 0) || (req->content_len > JSON_POST_MAX) )
+  {
+    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "The command is empty or too long.");
+    return ESP_OK;
+  }
+
+  for ( got = 0; got < (int)req->content_len; got += n )
+  {
+    n = httpd_req_recv(req, command + got, req->content_len - got);
+    if ( n == HTTPD_SOCK_ERR_TIMEOUT )
+    {
+      n = 0;                                        // Keep waiting for the rest of the body
+      continue;
+    }
+    if ( n <= 0 )
+    {
+      return ESP_FAIL;                              // The client went away: close the socket
+    }
+  }
+  command[got] = 0;
+
+  return run_json(req, command);
 }
 
 /*----------------------------------------------------------------
