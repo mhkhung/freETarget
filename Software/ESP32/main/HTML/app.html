@@ -1,0 +1,649 @@
+<!doctype html>
+<!--
+  app.html: the freETarget athlete page, served at http://<target>/
+  Talks to the target over the WebSocket API (TCPIP/ws_api.h), on port 8080.
+  Self contained: the target may be its own Wi-Fi network with no internet.
+  The previous page is at /classic.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>freETarget</title>
+<link rel="icon" href="/favicon.ico">
+<style>
+:root { --bg: #20221f; --panel: #2a2c29; --fg: #ebebe6; --muted: #9a9a94; --line: #3a3c38;
+  --accent: #4aa3ff; --red: #ff4b4b; --amber: #ffaa00; --green: #5ac878; --cyan: #00d2e6; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 8px 16px; border-bottom: 1px solid var(--line); }
+.brand { font-weight: 700; }
+.tname { color: var(--muted); }
+#link { margin-left: auto; font-size: 13px; color: var(--muted); }
+#link.up { color: var(--green); } #link.down { color: var(--red); }
+button, select, input { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; }
+button { cursor: pointer; } button:hover { border-color: var(--muted); } button:disabled { opacity: .45; cursor: default; }
+button.primary { background: #1f4f80; border-color: #2d6aa8; }
+main { padding: 16px; }
+.banner { background: #3b3220; border: 1px solid #6b5a2c; color: var(--amber); padding: 8px 12px; border-radius: 6px; margin-bottom: 12px;
+  display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.view { display: grid; grid-template-columns: minmax(0, min(78vh, 58vw)) minmax(300px, 1fr); gap: 20px; }
+@media (max-width: 860px) { .view { grid-template-columns: 1fr; } }
+.target { width: 100%; aspect-ratio: 1; display: block; background: #111; border-radius: 6px; touch-action: manipulation; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; align-items: center; }
+.tools .what { color: var(--muted); margin-left: 4px; }
+.clock { font-size: 20px; font-weight: 700; margin: 0 0 4px; font-variant-numeric: tabular-nums; }
+.clock.over { color: var(--red); }
+h1 { margin: 0; font-size: 22px; }
+.sub { color: var(--muted); margin: 2px 0 10px; }
+.latest { display: flex; align-items: baseline; gap: 14px; min-height: 76px; }
+.latest .n { color: var(--muted); font-size: 28px; font-weight: 700; }
+.latest .score { font-size: 64px; font-weight: 800; line-height: 1; color: var(--red); font-variant-numeric: tabular-nums; }
+.latest .arrow { font-size: 40px; }
+.tally { font-weight: 700; font-size: 18px; margin: 6px 0 2px; font-variant-numeric: tabular-nums; }
+.line { margin: 2px 0; font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.stats { color: var(--cyan); margin: 6px 0 10px; font-variant-numeric: tabular-nums; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.breakdown { display: flex; gap: 4px; flex-wrap: wrap; margin: 6px 0 10px; }
+.breakdown span { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; font-size: 13px; font-variant-numeric: tabular-nums; }
+.breakdown b { color: var(--muted); font-weight: 500; margin-right: 4px; }
+.section { margin: 12px 0 4px; color: var(--muted); font-size: 14px; display: flex; justify-content: space-between; border-bottom: 1px solid var(--line); }
+.section b { color: var(--fg); }
+ol.shots { list-style: none; padding: 0; margin: 0; columns: 2; column-gap: 24px; }
+@media (max-width: 500px) { ol.shots { columns: 1; } }
+ol.shots li { display: flex; gap: 10px; padding: 2px 4px; break-inside: avoid; font-variant-numeric: tabular-nums; cursor: pointer; border-radius: 4px; }
+ol.shots li:hover { background: var(--panel); }
+ol.shots li .n { width: 2.6em; color: var(--muted); }
+ol.shots li .d { width: 3.4em; font-weight: 700; }
+ol.shots li .t { color: var(--muted); font-size: 13px; margin-left: auto; }
+ol.shots li.newest .d { color: var(--red); }
+ol.shots li.miss .d { color: var(--amber); }
+ol.shots li.picked { outline: 1px solid var(--accent); }
+.sessions { display: grid; gap: 8px; max-width: 720px; }
+.sessions button { text-align: left; display: grid; gap: 2px; padding: 10px 12px; }
+.sessions small { color: var(--muted); }
+dialog { color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 12px; width: min(480px, 94vw); padding: 16px; }
+dialog::backdrop { background: #000b; }
+dialog h2 { margin: 0 0 12px; }
+dialog label { display: grid; gap: 4px; margin: 10px 0; font-size: 14px; color: var(--muted); }
+dialog .row { display: flex; gap: 10px; } dialog .row label { flex: 1; }
+dialog .check { display: flex; gap: 8px; align-items: center; color: var(--fg); }
+dialog .buttons { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.hidden { display: none !important; }
+#printhead { display: none; }
+@media print {
+  :root { color-scheme: light; }
+  html, body { background: #fff; color: #000; }
+  header, .tools, .actions, .banner, #liveonly, .latest, dialog { display: none !important; }
+  #printhead { display: block; margin-bottom: 8px; }
+  main { padding: 0; }
+  .view { grid-template-columns: 9cm 1fr; gap: 12px; }
+  .target { background: #fff; }
+  .muted, .sub, .section, ol.shots li .n, ol.shots li .t, .breakdown b { color: #444; }
+  .section b, .clock { color: #000; }
+  .clock { display: none; }
+  .stats { color: #000; }
+  .breakdown span { background: #fff; border-color: #999; }
+  ol.shots li .d, ol.shots li.newest .d { color: #000; }
+  ol.shots { columns: 2; }
+}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand">freETarget</span>
+  <span class="tname" id="tname"></span>
+  <button id="historyBtn" title="Past sessions (H)">History</button>
+  <a href="/classic" class="muted" style="font-size:13px">Classic page</a>
+  <span id="link" class="down">connecting</span>
+</header>
+<main>
+  <div id="banner" class="banner hidden"><span id="bannerText"></span> <button id="backLive">Back to live</button></div>
+  <section id="sessionList" class="hidden">
+    <h1>Past sessions</h1>
+    <p class="sub">Sessions still stored on the target, newest first.</p>
+    <div class="sessions" id="sessions"></div>
+  </section>
+  <section id="main" class="view">
+    <div>
+      <svg id="target" class="target" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div class="tools">
+        <button id="prev" title="Previous series (left arrow)">◀</button>
+        <button id="next" title="Next series (right arrow)">▶</button>
+        <span class="what" id="what"></span>
+        <button id="zoom" title="Zoom (Z)" style="margin-left:auto"></button>
+      </div>
+    </div>
+    <div>
+      <div id="printhead"></div>
+      <p class="clock" id="clock"></p>
+      <h1 id="title">Waiting for the target</h1>
+      <p class="sub" id="sub"></p>
+      <div class="latest" id="latest"></div>
+      <p class="tally" id="tally"></p>
+      <p class="line" id="series"></p>
+      <p class="line muted" id="sighters"></p>
+      <div class="breakdown" id="breakdown"></div>
+      <p class="stats" id="stats"></p>
+      <div class="actions" id="liveonly">
+        <button id="newSession" class="primary">New session…</button>
+        <button id="mode" class="hidden"></button>
+        <button id="sound" title="Speak each score (S)"></button>
+      </div>
+      <div class="actions">
+        <button id="csv">Export CSV</button>
+        <button id="print">Print</button>
+      </div>
+      <div id="list"></div>
+    </div>
+  </section>
+</main>
+
+<dialog id="newDialog">
+  <form method="dialog" id="newForm">
+    <h2>New session</h2>
+    <label>Athlete <input name="athlete" maxlength="30" autocomplete="name"></label>
+    <div class="row">
+      <label>Discipline
+        <select name="face"><option value="100">10m Air Pistol</option><option value="110">10m Air Rifle</option>
+          <option value="500">50m Pistol</option><option value="510">50m Rifle</option></select></label>
+      <label>Type
+        <select name="kind"><option value="practice">Practice</option><option value="match">Match</option></select></label>
+    </div>
+    <div class="row match-only">
+      <label>Match shots <input name="shots" type="number" min="10" max="120" step="10"></label>
+      <label>Sighting min <input name="sightMin" type="number" min="0" max="60"></label>
+      <label>Match min <input name="matchMin" type="number" min="1" max="240"></label>
+    </div>
+    <label class="check"><input name="decimal" type="checkbox"> Decimal totals</label>
+    <p class="muted" style="font-size:13px">Shots already fired stay in the target's history.</p>
+    <div class="buttons"><button value="cancel" formnovalidate>Cancel</button><button value="start" class="primary">Start</button></div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+/*
+ * ---- Target faces (dimensions from the PC client's target classes) ----
+ * rings: diameters in mm, ring 1 first.  Scoring as in the PC client:
+ * decimal = 11 - r / (r10 + calibre / 2), cut to one decimal, 0 below 1,
+ * at most 10.9.  The score is the decimal rounded down.
+ */
+const FACES = {
+  100: { name: "10m Air Pistol", event: "Pistol", targetName: "freETarget.targets.AirPistol", caliber: 4.5, card: 170,
+    rings: [155.5, 139.5, 123.5, 107.5, 91.5, 75.5, 59.5, 43.5, 27.5, 11.5], inner: 5, black: 59.5, blackFrom: 7, decimal: false },
+  110: { name: "10m Air Rifle", event: "Rifle", targetName: "freETarget.targets.AirRifle", caliber: 4.5, card: 80,
+    rings: [45.5, 40.5, 35.5, 30.5, 25.5, 20.5, 15.5, 10.5, 5.5, 0.5], inner: null, black: 30.5, blackFrom: 4, decimal: true, dot: true },
+  500: { name: "50m Pistol", event: "50m Pistol", targetName: "freETarget.targets.Pistol50m", caliber: 5.6, card: 550,
+    rings: [500, 450, 400, 350, 300, 250, 200, 150, 100, 50], inner: 25, black: 200, blackFrom: 7, decimal: false },
+  510: { name: "50m Rifle", event: "50m Rifle", targetName: "freETarget.targets.Rifle50m", caliber: 5.6, card: 250,
+    rings: [154.4, 138.4, 122.4, 106.4, 90.4, 74.4, 58.4, 42.4, 26.4, 10.4], inner: 5, black: 112.4, blackFrom: 4, decimal: false },
+};
+const faceOf = (code) => FACES[(code | 0) & ~1] || FACES[100];
+const SIGHT = 2, MATCH = 4;
+const SVGNS = "http://www.w3.org/2000/svg";
+const $ = (id) => document.getElementById(id);
+
+const prefs = Object.assign({ zoom: 0, sound: false, shots: 60, sightMin: 15, matchMin: 75, athlete: "", target: 100,
+  kind: "practice", decimal: {} }, JSON.parse(localStorage.getItem("fet") || "{}"));
+const savePrefs = () => localStorage.setItem("fet", JSON.stringify(prefs));
+
+function score(face, s) {
+  if (s.miss) return { dec: 0, int: 0, inner: false, r: null };
+  const r = Math.hypot(s.x, s.y);
+  let dec = Math.trunc((11 - r / (face.rings[9] / 2 + face.caliber / 2)) * 10 + 1e-9) / 10;
+  if (dec < 1) dec = 0;
+  if (dec > 10.9) dec = 10.9;
+  const innerR = face.inner != null ? face.inner / 2 + face.caliber / 2 : face.caliber / 2 - face.rings[9] / 2;
+  return { dec, int: Math.floor(dec), inner: r <= innerR, r };
+}
+function arrow(s) {
+  if (s.miss) return "";
+  if (Math.hypot(s.x, s.y) < 0.5) return "•";
+  const a = Math.atan2(s.y, s.x) * 180 / Math.PI;               // 0 = right, 90 = up
+  return ["→", "↗", "↑", "↖", "←", "↙", "↓", "↘"][Math.round(((a + 360) % 360) / 45) % 8];
+}
+const pad = (n) => String(n).padStart(2, "0");
+const hms = (sec) => { sec = Math.max(0, Math.floor(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60;
+  return (h ? h + ":" + pad(m) : m) + ":" + pad(sec % 60); };
+const clockTime = (utc) => { if (!utc) return ""; const d = new Date(utc * 1000); return pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds()); };
+const dateTime = (utc) => { if (!utc) return "time unknown"; const d = new Date(utc * 1000);
+  return d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()); };
+const decimalFor = (code) => (prefs.decimal[(code | 0) & ~1] ?? faceOf(code).decimal);
+
+/*
+ * ---- Session data ----
+ * One object per session, filled from the journal: session changes
+ * ("modes") and shots, in order.
+ */
+function newSession(n) { return { session: n, target: 0, modes: [], shots: [] }; }
+function addEvent(d, m) {
+  if ("change" in m) {
+    if (m.target) d.target = m.target;
+    d.modes.push({ type: m.session_type, utc: m.utc, change: m.change, seq: m.seq });
+  } else if ("shot" in m) {
+    d.shots.push({ seq: m.seq, fw: m.shot, type: m.session_type & ~1, x: m.x, y: m.y, miss: !!m.miss, utc: m.utc || 0, clock: m.clock });
+    if (m.athelete) d.athlete = m.athelete;
+  }
+}
+function sessionType(d) { return d.modes.length ? d.modes[d.modes.length - 1].type : 0; }
+function analyse(d) {                                            // Number the shots, split sighters and series
+  const face = faceOf(d.target), sighters = [], record = [];
+  for (const s of d.shots) {
+    Object.assign(s, score(face, s));
+    if (s.type === SIGHT) { sighters.push(s); s.label = "S" + sighters.length; }
+    else { record.push(s); s.label = String(record.length); s.series = Math.floor((record.length - 1) / 10); }
+  }
+  const series = [];
+  for (const s of record) (series[s.series] ||= []).push(s);
+  return { face, sighters, record, series, type: sessionType(d), match: d.modes.some((m) => m.type === MATCH || m.type === SIGHT) };
+}
+const total = (shots) => ({ int: shots.reduce((a, s) => a + s.int, 0), dec: Math.round(shots.reduce((a, s) => a + s.dec, 0) * 10) / 10,
+  x: shots.filter((s) => s.inner).length });
+const totalText = (t, dec) => dec ? `${t.dec.toFixed(1)}` : `${t.int}`;
+const totalBoth = (t, dec) => dec ? `${t.dec.toFixed(1)} (${t.int})` : `${t.int} (${t.dec.toFixed(1)})`;
+function groupStats(shots) {
+  const hit = shots.filter((s) => !s.miss);
+  if (!hit.length) return null;
+  const cx = hit.reduce((a, s) => a + s.x, 0) / hit.length, cy = hit.reduce((a, s) => a + s.y, 0) / hit.length;
+  let spread = 0;
+  for (const a of hit) for (const b of hit) spread = Math.max(spread, Math.hypot(a.x - b.x, a.y - b.y));
+  const mean = hit.reduce((a, s) => a + Math.hypot(s.x - cx, s.y - cy), 0) / hit.length;
+  return { cx, cy, spread, mean, n: hit.length };
+}
+
+/*
+ * ---- State ----
+ */
+let ws = null, hello = null, lastSeq = 0, caughtUp = false;
+let live = newSession(0);
+let past = null, pastLoading = 0;                                // A session from the history
+let view = null;                                                 // null: follow the live session; else an index into views()
+let picked = null;                                               // A shot picked in the list
+let sessionsCache = [];
+
+const shown = () => past || live;
+
+/*
+ * ---- Views: what the target shows ----
+ */
+function views(a) {
+  const v = [];
+  if (a.sighters.length) v.push({ label: "Sighters", shots: a.sighters, sighter: true });
+  a.series.forEach((s, i) => v.push({ label: a.match ? `Series ${i + 1}` : `Shots ${i * 10 + 1}–${i * 10 + s.length}`, shots: s }));
+  if (a.series.length > 1) v.push({ label: a.match ? "All match shots" : "All shots", shots: a.record });
+  if (!v.length) v.push({ label: a.type === SIGHT ? "Sighters" : "No shots yet", shots: [], sighter: a.type === SIGHT });
+  return v;
+}
+function autoView(a, v) {                                        // Follow the shooting
+  if (a.type === SIGHT) return v.findIndex((x) => x.sighter) >= 0 ? v.findIndex((x) => x.sighter) : 0;
+  if (!a.match && a.series.length > 1) return v.length - 1;     // Practice: everything
+  const last = a.series.length - 1;
+  const i = v.findIndex((x) => x.label === `Series ${last + 1}` || x.label.startsWith(`Shots ${last * 10 + 1}`));
+  return i >= 0 ? i : v.length - 1;
+}
+
+/*
+ * ---- Drawing ----
+ */
+function el(tag, attrs = {}, text) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+function svg(parent, tag, attrs, text) {
+  const e = document.createElementNS(SVGNS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text !== undefined) e.textContent = text;
+  parent.append(e);
+  return e;
+}
+const ZOOMS = ["Auto", "Card", "Ring 4", "Ring 7"];
+function viewHalf(face, shots) {
+  const c = face.caliber;
+  switch (prefs.zoom) {
+    case 1: return face.card / 2;
+    case 2: return face.rings[3] / 2 + c;
+    case 3: return face.rings[6] / 2 + c;
+  }
+  const hit = shots.filter((s) => !s.miss);
+  let m = face.rings[8] / 2 + c * 2;                            // At least ring 9
+  for (const s of hit) m = Math.max(m, Math.abs(s.x) + c * 1.5, Math.abs(s.y) + c * 1.5);
+  return Math.min(m, face.card / 2);
+}
+function drawTarget(target, face, shots, opts) {
+  target.replaceChildren();
+  const half = viewHalf(face, shots), card = face.card / 2;
+  target.setAttribute("viewBox", `${-half} ${-half} ${2 * half} ${2 * half}`);
+  const line = half / 300;
+  svg(target, "rect", { x: -card, y: -card, width: 2 * card, height: 2 * card, fill: "#f3efe2" });
+  svg(target, "circle", { cx: 0, cy: 0, r: face.black / 2, fill: "#141414" });
+  face.rings.forEach((d, i) => {
+    const ring = i + 1, white = ring >= face.blackFrom;
+    if (face.dot && ring === 10) svg(target, "circle", { cx: 0, cy: 0, r: d / 2, fill: "#f3efe2" });
+    else svg(target, "circle", { cx: 0, cy: 0, r: d / 2, fill: "none", stroke: white ? "#e8e4d8" : "#141414", "stroke-width": line * 1.5 });
+    if (ring <= 8) {                                             // Ring numbers between this ring and the next
+      const r = (d / 2 + face.rings[i + 1] / 2) / 2, size = (d / 2 - face.rings[i + 1] / 2) * 0.55;
+      for (const [x, y] of [[0, -r], [0, r], [-r, 0], [r, 0]]) {
+        svg(target, "text", { x, y, "font-size": size, "text-anchor": "middle", "dominant-baseline": "central",
+          fill: white ? "#e8e4d8" : "#141414", "font-family": "system-ui, sans-serif" }, ring);
+      }
+    }
+  });
+  if (face.inner) svg(target, "circle", { cx: 0, cy: 0, r: face.inner / 2, fill: "none", stroke: "#e8e4d8", "stroke-width": line * 1.5 });
+  if (opts.sighter) {                                            // Sighter cards have a black corner
+    const k = Math.min(card, half) * 0.22, x = Math.min(card, half), y = -Math.min(card, half);
+    svg(target, "path", { d: `M${x - k} ${y}H${x}V${y + k}Z`, fill: "#141414", stroke: "#f3efe2", "stroke-width": line * 4 });
+  }
+  const r = face.caliber / 2;
+  shots.forEach((s) => {
+    if (s.miss) return;
+    const newest = s === opts.newest, pick = s === picked;
+    svg(target, "circle", { cx: s.x, cy: -s.y, r, fill: newest ? "#ff3c3c" : "#2f8cff", "fill-opacity": 0.88,
+      stroke: pick ? "#ffaa00" : "#ffffff", "stroke-width": pick ? r * 0.25 : line });
+    svg(target, "text", { x: s.x, y: -s.y, "font-size": r * (s.label.length > 2 ? 0.8 : 1), "text-anchor": "middle",
+      "dominant-baseline": "central", fill: "#fff", "font-weight": 700, "font-family": "system-ui, sans-serif" }, s.label);
+  });
+  const g = groupStats(shots);
+  if (g && g.n > 1) {                                            // Group centre
+    const arm = half / 30;
+    for (const [w, c] of [[line * 6, "#20221f"], [line * 2.5, "#00d2e6"]]) {
+      svg(target, "path", { d: `M${g.cx - arm} ${-g.cy}H${g.cx + arm}M${g.cx} ${-g.cy - arm}V${-g.cy + arm}`, stroke: c,
+        "stroke-width": w, "stroke-linecap": "round" });
+    }
+  }
+}
+
+/*
+ * ---- Rendering the page ----
+ */
+function render() {
+  const d = shown(), a = analyse(d), dec = decimalFor(d.target), v = views(a);
+  if (view === null || view >= v.length) view = past ? 0 : autoView(a, v);
+  const cur = v[view];
+  const newest = !past && d.shots.length ? d.shots[d.shots.length - 1] : null;
+
+  $("banner").classList.toggle("hidden", !past);
+  if (past) $("bannerText").textContent = pastLoading ? `Loading session ${past.session}…`
+    : `Past session ${past.session} · ${dateTime(past.modes[0]?.utc || past.shots[0]?.utc)}`;
+  $("liveonly").classList.toggle("hidden", !!past);
+
+  drawTarget($("target"), a.face, cur.shots, { sighter: cur.sighter, newest });
+  $("what").textContent = cur.label;
+  $("prev").disabled = view <= 0;
+  $("next").disabled = view >= v.length - 1;
+  $("zoom").textContent = "Zoom: " + ZOOMS[prefs.zoom];
+
+  const kind = a.type === SIGHT ? "Sighters" : a.type === MATCH ? "Match" : "Practice";
+  $("title").textContent = d.session ? `${a.face.name} · ${kind}` : "No session yet";
+  const athlete = d.athlete || (past ? "" : hello?.athelete || "");
+  $("sub").textContent = [d.session ? `Session ${d.session}` : "", athlete].filter(Boolean).join(" · ");
+  $("printhead").textContent = `freETarget ${hello?.name || ""} · session ${d.session} · ${dateTime(d.modes[0]?.utc || d.shots[0]?.utc)}`;
+
+  const latest = $("latest");
+  latest.replaceChildren();
+  const last = past ? null : d.shots[d.shots.length - 1];
+  if (last) latest.append(el("span", { class: "n" }, "#" + last.label),
+    el("span", { class: "score" }, last.miss ? "M" : (dec ? last.dec.toFixed(1) : last.int + "") + (last.inner ? "*" : "")),
+    el("span", { class: "arrow" }, arrow(last)));
+
+  const t = total(a.record);
+  if (a.match) {
+    const of = prefs.shots;
+    $("tally").textContent = a.record.length ? `Match ${a.record.length}/${of}: ${totalBoth(t, dec)}` + (t.x ? ` · ${t.x}×` : "") : "Match not started";
+  } else {
+    $("tally").textContent = a.record.length ? `${a.record.length} shot${a.record.length > 1 ? "s" : ""}: ${totalBoth(t, dec)}` + (t.x ? ` · ${t.x}×` : "") : "";
+  }
+  $("series").textContent = a.series.length ? "Series: " + a.series.map((s) => totalText(total(s), dec)).join("  ") : "";
+  $("sighters").textContent = a.sighters.length ? `${a.sighters.length} sighter${a.sighters.length > 1 ? "s" : ""}` : "";
+
+  const counts = {};
+  for (const s of a.record) { const k = s.miss ? "M" : s.inner ? "X" : String(s.int); counts[k] = (counts[k] || 0) + 1; }
+  $("breakdown").replaceChildren(...["X", "10", "9", "8", "7", "6", "5", "4", "3", "2", "1", "0", "M"].filter((k) => counts[k])
+    .map((k) => { const sp = el("span"); sp.append(el("b", {}, k), String(counts[k])); return sp; }));
+
+  const g = groupStats(cur.shots);
+  $("stats").textContent = g ? [`${cur.label}: centre ${Math.abs(g.cx).toFixed(1)} mm ${g.cx >= 0 ? "right" : "left"}, ${Math.abs(g.cy).toFixed(1)} mm ${g.cy >= 0 ? "high" : "low"}`,
+    g.n > 1 ? `group ${g.spread.toFixed(1)} mm, mean radius ${g.mean.toFixed(1)} mm` : ""].filter(Boolean).join(" · ") : "";
+
+  const mode = $("mode");
+  mode.classList.toggle("hidden", past || !a.match);
+  mode.textContent = a.type === MATCH ? "Back to sighters" : "Start match";
+
+  $("sound").textContent = "Sound: " + (prefs.sound ? "on" : "off");
+  renderList(a, dec, newest);
+  renderClock();
+}
+
+function renderList(a, dec, newest) {
+  const list = $("list");
+  list.replaceChildren();
+  const block = (title, totalTextValue, shots) => {
+    const h = el("div", { class: "section" });
+    h.append(el("span", {}, title), el("b", {}, totalTextValue));
+    const ol = el("ol", { class: "shots" });
+    for (const s of shots) {
+      const li = el("li", { class: (s === newest ? "newest " : "") + (s.miss ? "miss " : "") + (s === picked ? "picked" : "") });
+      li.append(el("span", { class: "n" }, s.label), el("span", { class: "d" }, s.miss ? "M" : (dec ? s.dec.toFixed(1) : s.int + " ") + (s.inner ? "*" : "")),
+        el("span", {}, arrow(s)), el("span", { class: "t" }, dec ? "" : s.dec.toFixed(1)), el("span", { class: "t" }, clockTime(s.utc)));
+      li.onclick = () => { picked = picked === s ? null : s; const v = views(a); const i = v.findIndex((x) => x.shots.includes(s)); if (i >= 0) view = i; render(); };
+      ol.append(li);
+    }
+    list.append(h, ol);
+  };
+  for (let i = a.series.length - 1; i >= 0; i--) {
+    block(a.match ? `Series ${i + 1}` : `Shots ${i * 10 + 1}–${i * 10 + a.series[i].length}`, totalBoth(total(a.series[i]), dec), a.series[i]);
+  }
+  if (a.sighters.length) block("Sighters", "", a.sighters);
+}
+
+function renderClock() {
+  const box = $("clock");
+  const d = shown();
+  box.classList.remove("over");
+  if (past || !d.session) { box.textContent = ""; return; }
+  const type = sessionType(d), now = Date.now() / 1000;
+  const since = (t) => [...d.modes].reverse().find((m) => m.type === t && m.utc)?.utc;
+  let text = "";
+  if (type === SIGHT && since(SIGHT)) {
+    const left = prefs.sightMin * 60 - (now - since(SIGHT));
+    text = left > 0 ? `Sighting ${hms(left)}` : "Sighting time over";
+    box.classList.toggle("over", left <= 0);
+  } else if (type === MATCH && since(MATCH)) {
+    const start = d.modes.find((m) => m.type === MATCH && m.utc).utc, left = prefs.matchMin * 60 - (now - start);
+    text = left > 0 ? `Match ${hms(left)}` : "Match time over";
+    box.classList.toggle("over", left <= 0);
+  } else if (d.modes[0]?.utc) {
+    text = `Practice ${hms(now - d.modes[0].utc)}`;
+  }
+  box.textContent = text;
+}
+setInterval(renderClock, 1000);
+
+/*
+ * ---- Spoken scores ----
+ */
+function speak(s) {
+  if (!prefs.sound || !window.speechSynthesis) return;
+  const dec = decimalFor(live.target);
+  const text = s.miss ? "miss" : dec ? s.dec.toFixed(1) : String(s.int);
+  speechSynthesis.cancel();
+  speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+}
+
+/*
+ * ---- Talking to the target ----
+ */
+function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+function wsUrl() {
+  const forced = new URLSearchParams(location.search).get("ws");           // For testing: ?ws=host:port
+  return "ws://" + (forced || location.hostname + ":8080") + "/ws";
+}
+function connect() {
+  setLink("connecting", false);
+  ws = new WebSocket(wsUrl());
+  ws.onmessage = (e) => handle(e.data);
+  ws.onclose = () => { setLink("reconnecting", false); setTimeout(connect, 2000); };
+}
+function setLink(text, up) { $("link").textContent = text; $("link").className = up ? "up" : "down"; }
+
+function handle(text) {
+  let m;
+  try { m = JSON.parse(text); } catch (err) { return; }      // Command output
+  if ("hello" in m) {
+    hello = m;
+    $("tname").textContent = m.name || "";
+    if (m.next_seq <= lastSeq) { lastSeq = 0; live = newSession(0); }  // The journal was erased
+    caughtUp = false;
+    setLink("replaying", false);
+    send({ AFTER: lastSeq });
+    if (m.clock === "none") send({ TIME: Math.floor(Date.now() / 1000) });
+    if (past && pastLoading) send({ HISTORY: past.session });
+    if (!$("sessionList").classList.contains("hidden")) send({ SESSIONS: 50 });
+    if (!live.target) live.target = m.target;
+    render();
+    return;
+  }
+  if ("history" in m) {
+    if (past && past.session === m.history) addEvent(past, m);
+    return;
+  }
+  if ("history_done" in m) {
+    if (past && past.session === m.history_done) { pastLoading = 0; if (!past.target) past.target = sessionsCache.find((s) => s.session === past.session)?.target || 100; view = null; render(); }
+    return;
+  }
+  if ("sessions" in m) { sessionsCache = m.sessions; renderSessions(); return; }
+  if ("caught_up" in m) { caughtUp = true; setLink("live", true); render(); return; }
+  if ("change" in m || "shot" in m) {
+    if (m.session !== live.session && ("shot" in m || m.change === "new")) {
+      live = newSession(m.session);
+      live.target = m.target || hello?.target || 100;
+      view = null;
+    }
+    addEvent(live, m);
+    lastSeq = m.seq;
+    if (caughtUp) {
+      if ("shot" in m) { view = null; picked = null; analyse(live); speak(live.shots[live.shots.length - 1]); }
+      if (!past) render();
+    }
+  }
+}
+
+/*
+ * ---- History ----
+ */
+function openSessions() {
+  $("sessionList").classList.remove("hidden");
+  $("main").classList.add("hidden");
+  $("banner").classList.add("hidden");
+  $("sessions").replaceChildren(el("p", { class: "muted" }, "Loading…"));
+  send({ SESSIONS: 50 });
+}
+function closeSessions() {
+  $("sessionList").classList.add("hidden");
+  $("main").classList.remove("hidden");
+}
+function renderSessions() {
+  const box = $("sessions");
+  box.replaceChildren();
+  if (!sessionsCache.length) { box.append(el("p", { class: "muted" }, "No sessions stored.")); return; }
+  for (const s of [...sessionsCache].reverse()) {
+    const face = faceOf(s.target || 100);
+    const kind = s.session_type === MATCH ? "Match" : s.session_type === SIGHT ? "Sighters" : (s.target & 1 ? "Practice" : "Session");
+    const b = el("button");
+    b.append(el("span", {}, `Session ${s.session} · ${s.target ? face.name : "target unknown"} · ${kind}` + (s.session === live.session ? " (current)" : "")),
+      el("small", {}, `${dateTime(s.first_utc)} · ${s.shots} shot${s.shots === 1 ? "" : "s"}` + (s.sighters ? ` (${s.sighters} sighters)` : "")));
+    b.onclick = () => {
+      closeSessions();
+      if (s.session === live.session) { past = null; view = null; render(); return; }
+      past = newSession(s.session);
+      past.target = s.target;
+      pastLoading = 1;
+      view = 0; picked = null;
+      send({ HISTORY: s.session });
+      render();
+    };
+    box.append(b);
+  }
+}
+$("historyBtn").onclick = () => ($("sessionList").classList.contains("hidden") ? openSessions() : closeSessions());
+$("backLive").onclick = () => { past = null; view = null; picked = null; closeSessions(); render(); };
+
+/*
+ * ---- Controls ----
+ */
+$("prev").onclick = () => { if (view > 0) { view--; picked = null; render(); } };
+$("next").onclick = () => { view++; picked = null; render(); };
+$("zoom").onclick = () => { prefs.zoom = (prefs.zoom + 1) % ZOOMS.length; savePrefs(); render(); };
+$("sound").onclick = () => {
+  prefs.sound = !prefs.sound; savePrefs();
+  if (prefs.sound && window.speechSynthesis) speechSynthesis.speak(new SpeechSynthesisUtterance("sound on"));
+  render();
+};
+$("mode").onclick = () => {
+  const a = analyse(live);
+  if (a.type === MATCH) { if (confirm("Go back to sighters? Shots after this count as sighters.")) send({ SESSION: SIGHT }); }
+  else if (confirm("Start the match? Shots after this count for score.")) send({ SESSION: MATCH });
+};
+$("print").onclick = () => window.print();
+$("csv").onclick = () => {
+  const d = shown(), a = analyse(d);
+  const rows = [["session", "shot", "seq", "type", "x_mm", "y_mm", "r_mm", "direction", "score", "decimal", "inner_ten", "miss", "time"]];
+  for (const s of d.shots) {
+    rows.push([d.session, s.label, s.seq, s.type === SIGHT ? "sighter" : s.type === MATCH ? "match" : "practice",
+      s.miss ? "" : s.x.toFixed(2), s.miss ? "" : s.y.toFixed(2), s.miss ? "" : s.r.toFixed(2), arrow(s), s.int, s.dec.toFixed(1),
+      s.inner ? 1 : 0, s.miss ? 1 : 0, s.utc ? new Date(s.utc * 1000).toISOString() : ""]);
+  }
+  const blob = new Blob([rows.map((r) => r.join(",")).join("\n") + "\n"], { type: "text/csv" });
+  const link = el("a", { href: URL.createObjectURL(blob), download: `freETarget-${hello?.name || "target"}-session${d.session}-${a.face.event.replace(/\s/g, "")}.csv` });
+  document.body.append(link); link.click(); link.remove();
+};
+
+const dialog = $("newDialog"), form = $("newForm");
+function syncDialog() {
+  const code = form.face.value | 0;
+  form.querySelector(".match-only").classList.toggle("hidden", form.kind.value !== "match");
+  form.decimal.checked = prefs.decimal[code] ?? FACES[code].decimal;
+}
+$("newSession").onclick = () => {
+  form.athlete.value = hello?.athelete && hello.athelete !== "John Doe" ? hello.athelete : prefs.athlete;
+  form.face.value = String(prefs.target);
+  form.kind.value = prefs.kind;
+  form.shots.value = prefs.shots; form.sightMin.value = prefs.sightMin; form.matchMin.value = prefs.matchMin;
+  syncDialog();
+  dialog.showModal();
+};
+form.face.onchange = syncDialog;
+form.kind.onchange = syncDialog;
+form.decimal.onchange = () => { prefs.decimal[form.face.value | 0] = form.decimal.checked; };
+dialog.onclose = () => {
+  if (dialog.returnValue !== "start") return;
+  const code = form.face.value | 0, face = FACES[code], match = form.kind.value === "match";
+  Object.assign(prefs, { athlete: form.athlete.value.trim(), target: code, kind: form.kind.value,
+    shots: +form.shots.value || 60, sightMin: +form.sightMin.value || 15, matchMin: +form.matchMin.value || 75 });
+  prefs.decimal[code] = form.decimal.checked;
+  savePrefs();
+  const clean = (s) => s.replace(/["\\{}]/g, "");
+  send({ ATHLETE: clean(prefs.athlete) || "Athlete", EVENT: `${face.event} ${match ? "Match" : "Practice"}`, TARGET_NAME: face.targetName });
+  if (hello) hello.athelete = clean(prefs.athlete) || "Athlete";
+  send({ SESSION: 0 });                                       // A new session in the journal
+  if (match) send({ SESSION: SIGHT });                        // Matches start with sighters
+  past = null; view = null; picked = null;
+};
+
+document.addEventListener("keydown", (e) => {
+  if (e.target.closest("input, select, textarea, dialog")) return;
+  if (e.key === "z" || e.key === "Z") $("zoom").click();
+  else if (e.key === "ArrowLeft") $("prev").click();
+  else if (e.key === "ArrowRight" && !$("next").disabled) $("next").click();
+  else if (e.key === "s" || e.key === "S") $("sound").click();
+  else if (e.key === "h" || e.key === "H") $("historyBtn").click();
+});
+
+render();
+connect();
+</script>
+</body>
+</html>

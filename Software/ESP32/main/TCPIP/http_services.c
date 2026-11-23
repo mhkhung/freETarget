@@ -64,6 +64,7 @@ static esp_err_t service_get_who(httpd_req_t *req);                             
 static esp_err_t service_get_FreeETarget_png(httpd_req_t *req);                        // Icon for the FreeETarget page
 static esp_err_t service_get_json(httpd_req_t *req);                                   // Webb ased JSON interface
 static esp_err_t service_get_live(httpd_req_t *req);                                   // WebSocket test page
+static esp_err_t service_get_app(httpd_req_t *req);                                    // Athlete page
 static esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err);       // Create a URL not found handler
 static esp_err_t service_post_post(httpd_req_t *req);
 static void      http_printf(const char *format, httpd_req_t *req, unsigned int size); // Formatted print to the HTTP request
@@ -74,7 +75,8 @@ static void      http_printf(const char *format, httpd_req_t *req, unsigned int 
 #define URI(path, function, context) {.uri = (path), .method = HTTP_GET, .handler = (function), .user_ctx = (context)}
 
 const my_uri_t uri_list[] = {
-    {DEFAULT_HTTP_PORT, "Display target",      URI("/", service_get_FreeETarget, NULL)                     }, // Main target page
+    {DEFAULT_HTTP_PORT, "Display target",      URI("/", service_get_app, NULL)                             }, // Main target page
+    {DEFAULT_HTTP_PORT, "Classic target page", URI("/classic", service_get_FreeETarget, NULL)              },
 
     {DEFAULT_HTTP_PORT, "Help menu",           URI("/help", service_get_help, NULL)                        },
     {DEFAULT_HTTP_PORT, "Target info",         URI("/who", service_get_who, NULL)                          },
@@ -145,11 +147,18 @@ void register_services(httpd_handle_t server, // Pointer to active server
 
 /*----------------------------------------------------------------
  *
- * @function: service_get_live
+ * @function: service_get_app / service_get_live
  *
- * @brief:    Small page that shows the shots received over /ws
+ * @brief:    The athlete page (/) and the small WebSocket test page
+ *            (:8080/live).  Both get their shots over /ws.
  *
  *--------------------------------------------------------------*/
+static esp_err_t service_get_app(httpd_req_t *req)
+{
+  httpd_resp_set_type(req, "text/html");
+  return httpd_resp_send(req, (const char *)app_html_start, SIZEOF_app_HTML);
+}
+
 static esp_err_t service_get_live(httpd_req_t *req)
 {
   httpd_resp_set_type(req, "text/html");

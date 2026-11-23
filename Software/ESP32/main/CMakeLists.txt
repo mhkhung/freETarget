@@ -14,5 +14,6 @@ idf_component_register(SRCS ${app_sources}
                                    "HTML/help.html"
                                    "HTML/menu.html"
                                    "HTML/live.html"
+                                   "HTML/app.html"
                                    "TCPIP/ca_cert.pem"
                        )

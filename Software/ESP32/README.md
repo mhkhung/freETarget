@@ -98,6 +98,26 @@ the distance.
 - A positive number: the limit in mm.
 - A negative number: no limit.
 
+## Web page
+
+`http://<target>/` is the athlete page. It works on phones, tablets and
+laptops, with no internet needed:
+
+- Live target with the newest shot in red, zoom, and the group centre. Sighter
+  targets have a marked corner.
+- **New session**: athlete, discipline (10 m air pistol or rifle, 50 m pistol
+  or rifle), practice or match. Matches start with sighters; **Start match**
+  switches to record shots. Sighting and match countdowns (15 and 75 minutes by
+  default) come from the journal, so they survive a reload.
+- Scores as in the PC client: decimal and integer, inner tens (*), totals per
+  series of 10, sighters kept apart, score breakdown, group size and mean
+  radius.
+- Spoken scores (Sound), CSV export, a printable page, and **History** to open
+  any session still in the journal.
+
+The previous page is at `/classic`. Match length and times are kept by each
+browser, not by the target.
+
 ## WebSocket API
 
 Browsers and other network clients can use `ws://<target>:8080/ws`. The
