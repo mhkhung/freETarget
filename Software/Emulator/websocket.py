@@ -11,6 +11,9 @@ from protocol import exact
 
 
 class WebSocket:
+    pongs = 0          # Pong frames received (answers to our pings)
+    opened = False     # Handshake done, so a close frame can be sent
+
     def __init__(self, url, timeout=10, headers=None):
         parsed = urlsplit(url)
         if parsed.scheme != "ws" or parsed.hostname not in ("127.0.0.1", "localhost"):
@@ -37,6 +40,7 @@ class WebSocket:
         if " 101 " not in lines[0] or headers.get("sec-websocket-accept", "").strip() != expected:
             self.close()
             raise ConnectionError("WebSocket handshake refused: " + lines[0])
+        self.opened = True
 
     def frame(self, opcode, data):
         mask = os.urandom(4)
@@ -83,6 +87,9 @@ class WebSocket:
             if opcode == 9:
                 self.frame(10, payload)
                 continue
+            if opcode == 10:
+                self.pongs += 1
+                continue
             if opcode in (0, 1):
                 self.fragments.extend(payload)
                 if len(self.fragments) > 1024 * 1024:
@@ -96,6 +103,14 @@ class WebSocket:
                         return {"console": text}
 
     def close(self):
+        # Say goodbye first: without a close frame the firmware's web server
+        # logs "Failed to read header byte (socket FD invalid)".
+        if self.opened:
+            self.opened = False
+            try:
+                self.frame(8, struct.pack("!H", 1000))
+            except OSError:
+                pass
         try:
             self.sock.shutdown(socket.SHUT_RDWR)
         except OSError:

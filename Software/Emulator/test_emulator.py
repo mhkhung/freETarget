@@ -123,6 +123,22 @@ class ProtocolTests(unittest.TestCase):
         self.assertEqual(ws.receive(), {"x": 1})
         self.assertTrue(ws.sock.sent)  # A masked pong was sent.
 
+    def test_pong_is_counted_not_returned(self):
+        ws = WebSocket.__new__(WebSocket)
+        ws.buffer, ws.fragments = bytearray(), bytearray()
+        ws.sock = FakeSocket([b'\x8a\x03lab\x81\x0a{"shot":1}'])
+        self.assertEqual(ws.receive(), {"shot": 1})
+        self.assertEqual(ws.pongs, 1)
+
+    def test_close_sends_a_close_frame(self):
+        ws = WebSocket.__new__(WebSocket)
+        ws.sock, ws.opened = FakeSocket([]), True
+        ws.sock.shutdown = ws.sock.close = lambda *args: None
+        ws.close()
+        ws.close()
+        self.assertEqual(ws.sock.sent[0], 0x88)   # FIN + close, sent only once
+        self.assertEqual(len(ws.sock.sent), 2 + 4 + 2)
+
 
 class BoardTests(unittest.TestCase):
     def test_gate_order_and_clock_queue_budget(self):

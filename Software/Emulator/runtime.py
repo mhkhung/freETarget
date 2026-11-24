@@ -133,7 +133,7 @@ class Runtime:
                     ws.send({"AFTER": 0})
                     self.ready.set()
                     self.monitor_error = None
-                    silence = 0
+                    silence, pongs = 0, ws.pongs
                     while not self.closed.is_set():
                         try:
                             event = ws.receive()
@@ -155,7 +155,10 @@ class Runtime:
                                     if len(self.seen_order) > 5000:
                                         self.seen.discard(self.seen_order.popleft())
                         except socket.timeout:
-                            silence += 1
+                            # The firmware sends nothing while idle; its pong
+                            # to our ping shows it is still there.
+                            silence = 0 if ws.pongs != pongs else silence + 1
+                            pongs = ws.pongs
                             if silence >= 3:
                                 raise ConnectionError("firmware heartbeat timed out")
                             ws.frame(9, b"lab")
