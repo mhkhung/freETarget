@@ -362,3 +362,5 @@ healthchecksdb
 *.code-workspace
 /Software/ESP32/test/host/test_journal
 /Software/ESP32/test/host/test_journal.dSYM
+build/
+
