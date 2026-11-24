@@ -1,5 +1,6 @@
 """Own emulator process lifetime, virtual board, and local dashboard."""
 import collections
+import dataclasses
 import ipaddress
 import json
 import shutil
@@ -15,6 +16,10 @@ from board import Board
 from prepare import RUNTIME, ROOT, refresh_firmware
 from websocket import WebSocket
 from physics import Target, speed_of_sound
+
+# The sensors sit this far in front of the paper, as on the real target. It is
+# also the firmware's Z_OFFSET default; startup keeps the two the same.
+SENSOR_DEPTH_MM = 13.0
 
 
 class Runtime:
@@ -35,7 +40,7 @@ class Runtime:
         self.flash = RUNTIME / (state + ".bin")
         self.state = state
         self.fresh = fresh
-        self.board = Board(self.cosim_port)
+        self.board = Board(self.cosim_port, Target(depth_mm=SENSOR_DEPTH_MM))
         self.process = None
         self.logs = collections.deque(maxlen=300)
         self.events = collections.deque(maxlen=5000)
@@ -126,9 +131,11 @@ class Runtime:
                     hello = ws.receive()
                     self.events.append(hello)
                     if not self.geometry_configured:
-                        # Upgrade earlier emulator NVS (ANGLE=0) without erasing
-                        # saved shots or unrelated target settings.
-                        self.firmware_command({"ANGLE": int(self.board.target.angle_deg)})
+                        # Give the firmware the modelled geometry (earlier emulator
+                        # NVS had ANGLE=0) without erasing saved shots or
+                        # unrelated target settings.
+                        self.firmware_command({"ANGLE": int(self.board.target.angle_deg),
+                                               "Z_OFFSET": int(round(self.board.target.depth_mm))})
                         self.geometry_configured = True
                     ws.send({"AFTER": 0})
                     self.ready.set()
@@ -312,7 +319,8 @@ def serve(port, fresh, lan=False):
                     temperature, humidity = float(obj["temperature"]), float(obj["humidity"])
                     speed_of_sound(temperature, humidity)
                     with runtime.board.lock:
-                        runtime.board.target = Target(temperature=temperature, humidity=humidity)
+                        runtime.board.target = dataclasses.replace(runtime.board.target, temperature=temperature,
+                                                                   humidity=humidity)  # Keep the geometry
                     result = {"ok": True}
                 else:
                     self.respond({"error": "not found"}, 404)

@@ -86,8 +86,18 @@ def main():
         if found is None:
             raise RuntimeError("Could not find send_event")
         (build / "ws_event_host.inc").write_text(found.group() + "\n")
+        source = (MAIN / "compute_hit.c").read_text()
+        parts = [source[source.index("#define THRESHOLD"):source.index("static void remap_target(shot_record_t *s);")]]
+        for pattern in (r"^void init_sensors\(void\)\n\{.*?^\}", r"^unsigned int compute_hit\(.*?^\}",
+                        r"^static sensor_t \*const sensor_list = s;.*?^bool find_xy_3D\(.*?^\}"):
+            found = re.search(pattern, source, re.MULTILINE | re.DOTALL)
+            if found is None:
+                raise RuntimeError("Could not find " + pattern)
+            parts.append(found.group())
+        # GCC accepts 1.0d for a double; the host compiler may not
+        (build / "compute_hit_host.inc").write_text(re.sub(r"(\d)d\b", r"\1", "\n\n".join(parts)) + "\n")
         for name in ("test_json_stream", "test_timed_fire", "test_helpers", "test_json_text", "test_shot_journal",
-                     "test_http_services", "test_ws_event"):
+                     "test_http_services", "test_ws_event", "test_compute_hit"):
             binary = build / name
             sources = [str(HERE / (name + ".c"))]
             if name == "test_shot_journal":

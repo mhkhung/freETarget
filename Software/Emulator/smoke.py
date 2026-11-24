@@ -220,8 +220,9 @@ def main():
         print(f"Timing: late={runtime.board.events_late}, max lateness={runtime.board.max_lateness_ns} ns, dropped={runtime.board.dropped}", flush=True)
 
         # Simulate flash saved by the earlier cardinal-sensor fixture. Startup
-        # must restore corner geometry without discarding journal contents.
-        runtime.firmware_command({"ANGLE": 0})
+        # must restore corner geometry and the sensor depth without
+        # discarding journal contents.
+        runtime.firmware_command({"ANGLE": 0, "Z_OFFSET": 0})
         runtime.close()
         runtime = Runtime(fresh=False, offset=100, state="smoke")
         runtime.start()
@@ -244,7 +245,7 @@ def main():
                 if "shot" in event:
                     assert math.hypot(event["x"] - 15, -event["y"] + 10) < 1.0, event
                     break
-        print("PASS: existing flash with the old angle is migrated to corner sensors before accepting shots", flush=True)
+        print("PASS: existing flash with the old angle and depth is migrated before accepting shots", flush=True)
         print("All emulator integration checks passed.", flush=True)
     except Exception:
         print("\nRecent firmware console:\n" + "\n".join(runtime.logs)[-6000:], flush=True)

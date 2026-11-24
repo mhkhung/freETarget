@@ -93,15 +93,17 @@ and reported coordinates are expected: integration tests currently allow
 counter reads. This is a software regression fixture, not a calibration tool.
 
 The board fixture selects revision 5.2, a 232 mm sensor circle, 45° sensor
-rotation and zero target depth, no high-threshold latency correction, and disabled
-paper feed. It provides the HDC3022 temperature/humidity sensor with valid CRCs,
+rotation, sensors 13 mm in front of the paper (the slant range to them is
+longer than the distance on the paper), no high-threshold latency correction,
+and disabled paper feed. It provides the HDC3022 temperature/humidity sensor with valid CRCs,
 acknowledges the reference DAC, and models RUN latch clearing from STOP_N.
 The sensors sit at the corners: **N top-left, E top-right, S bottom-right,
 W bottom-left**. The firmware `ANGLE` setting is 45°, matching the forward
 model. With the 232 mm circle, each corner is about 82.0 mm from each axis.
 The dashboard draws sensor positions supplied by the same geometry model.
-Startup synchronizes the firmware's `ANGLE` through its normal command API,
-so older emulator flash with angle zero is upgraded without erasing the journal.
+Startup synchronizes the firmware's `ANGLE` and `Z_OFFSET` (13 mm) through its
+normal command API, so older emulator flash with angle or depth zero is upgraded
+without erasing the journal.
 Temperature/humidity affect both generated arrivals and the virtual I²C sensor;
 allow the firmware to take its next sensor reading after changing them.
 
