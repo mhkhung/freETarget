@@ -402,6 +402,11 @@ static bool send_event(int fd, const shot_journal_event_t *ev, unsigned int hist
              "\"target\":%u, \"utc\":%u, \"reason\":\"%s\"", ev->session, ev->session_type, ev->seq,
              (ev->kind == JRNL_SESSION) ? "new" : (ev->kind == JRNL_END) ? "end" : "mode", ev->target, ev->utc,
              (ev->kind != JRNL_END) ? "" : (ev->reason == JRNL_END_IDLE) ? "idle" : "command");
+    if ( (history == 0) && (ev->session == shot_journal_session()) )
+    {
+      used = strlen(text);
+      snprintf(text + used, sizeof(text) - used - 2, ", \"event\":\"%.60s\"", json_event);
+    }
   }
   used           = strlen(text);
   text[used]     = '}';

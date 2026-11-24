@@ -338,6 +338,8 @@ function newSession(n) { return { session: n, target: 0, modes: [], shots: [], l
 function addEvent(d, m) {
   if (m.seq <= d.lastSeq) return;                              // A restarted history replay repeats its earlier entries
   d.lastSeq = m.seq;
+  // Replayed shots carry today's event name; only trust it for the current session.
+  if (m.event && (!("shot" in m) || caughtUp || m.session === hello?.session)) d.event = m.event;
   if ("change" in m && m.change === "end") {
     d.ended = { utc: m.utc, reason: m.reason };
   } else if ("change" in m) {
@@ -349,7 +351,6 @@ function addEvent(d, m) {
     // converts back so exports match the journal and the PC client.
     d.shots.push({ seq: m.seq, fw: m.shot, type: m.session_type & ~1, x: m.x, y: -m.y, miss: !!m.miss, utc: m.utc || 0, clock: m.clock });
     if (m.athelete) d.athlete = m.athelete;
-    if (m.event) d.event = m.event;                              // The target's current event name (not saved in the journal)
   }
 }
 function sessionType(d) { return d.modes.length ? d.modes[d.modes.length - 1].type : 0; }
@@ -357,7 +358,8 @@ function sessionType(d) { return d.modes.length ? d.modes[d.modes.length - 1].ty
 // names, so this browser remembers which past sessions were finals.
 function isFinal(d, match) {
   if (!match) return false;
-  if (d === live && /\bfinal\b/i.test(d.event || hello?.event || "")) return true;
+  const event = d === live ? d.event ?? (d.session === hello?.session ? hello.event : undefined) : undefined;
+  if (event !== undefined) return /\bfinal\b/i.test(event);      // Explicit match metadata overrides a remembered final
   return prefs.finals.includes(d.session);
 }
 function finalPlan() {                                           // Shots per series: 5, 5, then pairs
@@ -859,7 +861,10 @@ function handle(text) {
     hello = m;
     if (m.utc) skew = m.utc + 0.5 - Date.now() / 1000;          // Session clocks use the target's time (whole seconds)
     $("tname").textContent = m.name || "";
-    if (m.next_seq <= lastSeq) { lastSeq = 0; live = newSession(0); }  // The journal was erased
+    if (m.next_seq <= lastSeq) {                               // The journal was erased; session numbers may be reused
+      lastSeq = 0; live = newSession(0); prefs.finals = []; savePrefs();
+    }
+    if (live.session === m.session) live.event = m.event;
     caughtUp = false;
     setLink("replaying", false);
     send({ AFTER: lastSeq });
@@ -889,9 +894,13 @@ function handle(text) {
     addEvent(live, m);
     lastSeq = m.seq;
     if (caughtUp && m.utc) skew = m.utc + 0.5 - Date.now() / 1000;   // A live event was just stamped: follow the target's clock
-    if (live.session && !prefs.finals.includes(live.session) && analyse(live).final) {
-      prefs.finals = [...prefs.finals, live.session].slice(-100);
-      savePrefs();
+    if (live.session && analyse(live).match) {
+      const final = analyse(live).final;
+      if (prefs.finals.includes(live.session) !== final) {
+        prefs.finals = prefs.finals.filter((s) => s !== live.session);
+        if (final) prefs.finals = [...prefs.finals, live.session].slice(-100);
+        savePrefs();
+      }
     }
     if (caughtUp) {
       if ("shot" in m) { if (!past && view === null) picked = null; analyse(live); speak(live.shots[live.shots.length - 1]); }
@@ -978,8 +987,9 @@ globalThis.onbeforeprint = buildReport;                         // Also for the 
 /*
  * ---- Calibration ----
  * The target adds X_OFFSET and Y_OFFSET (mm, positive right and up) to every
- * new shot. The hello message carries them; older firmware is asked for an
- * ECHO. They are set with a POST to /json on this page's own web server,
+ * new shot. Read current offsets before editing and check again before saving:
+ * another client may have changed them since this browser connected.
+ * They are set with a POST to /json on this page's own web server,
  * whose reply says if the target is locked.
  */
 let calib = null;                                                // { start: {x, y} | null, x, y, busy, note, error }
@@ -997,37 +1007,45 @@ function readOffsets(text) {
   const x = text.match(/"X_OFFSET":\s*(-?\d+(?:\.\d+)?)/), y = text.match(/"Y_OFFSET":\s*(-?\d+(?:\.\d+)?)/);
   return x && y ? { x: +x[1], y: +y[1] } : null;
 }
-function calibrationDone(update) { if (calib) Object.assign(calib, { busy: false }, update); render(); }
-const helloOffsets = () => (typeof hello?.x_offset === "number" && typeof hello?.y_offset === "number"
-  ? { x: hello.x_offset, y: hello.y_offset } : null);
+function calibrationDone(edit, update) { if (calib === edit) Object.assign(edit, { busy: false }, update); render(); }
+async function currentOffsets() {
+  const reply = await fetch("/calibration", { cache: "no-store" });
+  if (reply.status === 404) return readOffsets(await targetCommand({ ECHO: 0 })); // Older firmware
+  if (!reply.ok) throw new Error("HTTP " + reply.status);
+  const value = await reply.json();
+  return Number.isFinite(value.x_offset) && Number.isFinite(value.y_offset) ? { x: value.x_offset, y: value.y_offset } : null;
+}
 function openCalibration() {
-  const known = helloOffsets();
-  if (known) { calib = { start: known, x: known.x, y: known.y, busy: false, note: "" }; render(); return; }
-  calib = { start: null, x: 0, y: 0, busy: true, note: "Reading the calibration from the target…" };
+  const edit = calib = { start: null, x: 0, y: 0, busy: true, note: "Reading the calibration from the target…" };
   render();
-  targetCommand({ ECHO: 0 }).then((text) => {
-    const now = readOffsets(text);
+  currentOffsets().then((now) => {
     if (!now) throw new Error("no offsets");
-    calibrationDone({ start: now, x: now.x, y: now.y, note: "" });
-  }).catch(() => calibrationDone({ error: true, note: "Could not read the calibration from the target." }));
+    calibrationDone(edit, { start: now, x: now.x, y: now.y, note: "" });
+  }).catch(() => calibrationDone(edit, { error: true, note: "Could not read the calibration from the target." }));
 }
 function saveCalibration() {
-  const x = round2(calib.x), y = round2(calib.y);
-  Object.assign(calib, { busy: true, error: false, note: "Saving…" });
+  const edit = calib, x = round2(edit.x), y = round2(edit.y);
+  Object.assign(edit, { busy: true, error: false, note: "Saving…" });
   render();
-  targetCommand({ X_OFFSET: x, Y_OFFSET: y })
+  currentOffsets().then((now) => {
+      if (calib !== edit) throw new Error("closed");
+      if (!now) throw new Error("no offsets");
+      if (Math.abs(now.x - edit.start.x) > 0.005 || Math.abs(now.y - edit.start.y) > 0.005) throw new Error("changed");
+      return targetCommand({ X_OFFSET: x, Y_OFFSET: y });
+    })
     .then((reply) => {
       if (/locked/i.test(reply)) throw new Error("locked");
       if (/cannot decode|invalid/i.test(reply)) throw new Error("not saved");
-      if (helloOffsets()) { hello.x_offset = x; hello.y_offset = y; return { x, y }; }
-      return targetCommand({ ECHO: 0 }).then(readOffsets);   // Older firmware: read it back
+      return currentOffsets();                              // Verify what the target actually saved
     })
     .then((now) => {
       if (!now || Math.abs(now.x - x) > 0.005 || Math.abs(now.y - y) > 0.005) throw new Error("not saved");
-      calibrationDone({ start: now, x: now.x, y: now.y, note: "Saved on the target. New shots use it; shots already fired keep their place." });
+      if (hello) { hello.x_offset = now.x; hello.y_offset = now.y; }
+      calibrationDone(edit, { start: now, x: now.x, y: now.y, note: "Saved on the target. New shots use it; shots already fired keep their place." });
     })
-    .catch((e) => calibrationDone({ error: true, note: e.message === "locked"
-      ? "The target is locked. Unlock it to change the calibration." : "The target did not accept the calibration." }));
+    .catch((e) => calibrationDone(edit, { error: true, note: e.message === "locked"
+      ? "The target is locked. Unlock it to change the calibration." : e.message === "changed"
+      ? "Another client changed the calibration. Close and reopen calibration to read the new offsets." : "The target did not accept the calibration." }));
 }
 const offsetText = (x, y) => `${Math.abs(x).toFixed(2)} mm ${x < 0 ? "left" : "right"} · ${Math.abs(y).toFixed(2)} mm ${y < 0 ? "down" : "up"}`;
 function renderCalibration() {

@@ -130,7 +130,9 @@ laptops, with no internet needed:
   shortest and longest gap.
 - **Calibrate**: move the shots (0.1 to 2 mm steps) until they match the holes
   in the card, then save. This sets `X_OFFSET`/`Y_OFFSET` on the target, so it
-  applies to new shots for every client; a locked target refuses it.
+  applies to new shots for every client; a locked target refuses it. Opening
+  calibration reads the current offsets. If another client changes them while
+  the editor is open, saving asks you to close and reopen it first.
 - **Report (PDF)**: a printable A4 report with eight series per page (target
   plot, scores, gaps, times, totals and running totals), laid out like
   cvLiveScore's. Choose *Save as PDF* in the print dialog.
@@ -154,7 +156,9 @@ protocol is described in [main/TCPIP/ws_api.h](main/TCPIP/ws_api.h). In short:
   fired. Nothing is lost or repeated across a dropped connection.
 - Shots look like the TCP ones (`"shot"`, `"seq"`, `"x"`, `"y"`, `"r"`, `"a"`,
   `"utc"`, ...) plus `"session"`. Session changes
-  arrive as `{"session": ..., "change": "new"}` or `"mode"`.
+  arrive as `{"session": ..., "change": "new"}` or `"mode"`. Changes in the
+  current session include `"event"` so all clients recognize a match or final
+  before its first shot. Historical event names are not stored in the journal.
 - Any other message is an ordinary JSON command (`{"TIME": ...}`,
   `{"ECHO":0}`, ...). Command output comes back as plain text.
 - `{"SESSIONS": n}` lists the sessions in the journal and `{"HISTORY": s}`
@@ -180,3 +184,8 @@ For typing into a browser, a GET still works for the commands that only report:
 `/json?{"ECHO":0}`, `/json?{"VERSION":0}` and `/json?{"MFS?":0}`. Other commands
 sent as a GET get `405 Method Not Allowed`. A request waits until the previous
 command's output has finished (up to 5 seconds, then `503`).
+
+`GET /calibration` returns the current `x_offset` and `y_offset` as JSON with
+`Cache-Control: no-store`. The athlete page uses it before editing and saving,
+and to verify the saved offsets. Incomplete `/json` bodies close on receive
+timeout; an overall receive budget also limits clients sending very slowly.

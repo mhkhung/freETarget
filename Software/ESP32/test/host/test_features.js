@@ -20,7 +20,7 @@ function withSpeech(extra = {}) {
 function startFinal(p, { sightAt = T, matchAt = null } = {}) {
   p.run(`
     prefs.commands = true;
-    receive({hello: 'freETarget', name: 'Lane 2', next_seq: 1, target: 100, clock: 'ntp', event: 'Pistol Final'});
+    receive({hello: 'freETarget', name: 'Lane 2', session: 4, next_seq: 1, target: 100, clock: 'ntp', event: 'Pistol Final'});
     receive({session: 4, seq: 1, change: 'new', target: 100, session_type: 0, utc: ${sightAt}});
     receive({session: 4, seq: 2, change: 'mode', target: 100, session_type: 2, utc: ${sightAt}});
     ${matchAt ? `receive({session: 4, seq: 3, change: 'mode', target: 100, session_type: 4, utc: ${matchAt}});` : ""}
@@ -54,6 +54,38 @@ const shot = (p, seq, n, type, x = 0, y = 0, utc = 0) =>
   assert.equal(board[2].children[3].textContent, "");
   assert.equal(board[0].children[12].textContent, "54.5");
   assert.ok(JSON.parse(p.saved.get("fet")).finals.includes(4)); // Remembered for History
+}
+
+// ---- Session metadata: stale hellos, corrected caches and erased journals ----
+{
+  const { p } = withSpeech();
+  startFinal(p);
+  // Another client starts a regular match. The old hello still names a final.
+  p.run(`
+    receive({session: 5, seq: 3, change: 'new', session_type: 0, target: 100, event: 'Pistol Match'});
+    receive({session: 5, seq: 4, change: 'mode', session_type: 2, target: 100, event: 'Pistol Match'});
+  `);
+  assert.equal(p.run('analyse(live).final'), false);             // Correct before the first shot
+  assert.equal(p.run('prefs.finals.includes(5)'), false);
+  assert.equal(p.get('mode').textContent, 'Start match');
+  p.run(`receive({session: 5, seq: 5, shot: 1, session_type: 5, event: 'Pistol Match', x: 0, y: 0})`);
+  assert.equal(p.run('analyse(live).final'), false);
+
+  // An older firmware's new-session frame has no event; don't reuse the hello.
+  p.run(`
+    receive({session: 6, seq: 6, change: 'new', session_type: 0, target: 100});
+    receive({session: 6, seq: 7, change: 'mode', session_type: 2, target: 100});
+    prefs.finals.push(6);
+    receive({session: 6, seq: 8, shot: 1, session_type: 3, event: 'Pistol Match', x: 0, y: 0});
+  `);
+  assert.equal(p.run('analyse(live).final'), false);
+  assert.equal(p.run('prefs.finals.includes(6)'), false);        // Correct an old erroneous cache entry
+  p.run(`
+    past = newSession(4); past.modes.push({type: MATCH}); past.event = 'Pistol Match';
+  `);
+  assert.equal(p.run('analyse(past).final'), true);              // History keeps its remembered final
+  p.run(`receive({hello: 'freETarget', session: 4, next_seq: 1, target: 100, event: 'Pistol Match'})`);
+  assert.equal(p.run('prefs.finals.length'), 0);                 // Erased journal reuses session numbers
 }
 
 // ---- The range officer: timed from the journal, spoken once, resumed after a reload ----
@@ -169,8 +201,14 @@ const shot = (p, seq, n, type, x = 0, y = 0, utc = 0) =>
 // ---- Calibration through /json: read, preview, save, and a locked target ----
 (async () => {
   const requests = [];
-  let offsets = { x: 0.25, y: -0.5 }, locked = false;
+  let offsets = { x: 0.25, y: -0.5 }, locked = false, currentFirmware = false;
   const fetch = async (url, options) => {
+    if (url === '/calibration') {
+      assert.equal(options.cache, 'no-store');
+      requests.push('read');
+      return currentFirmware ? { ok: true, json: async () => ({ x_offset: offsets.x, y_offset: offsets.y }) }
+        : { ok: false, status: 404 };
+    }
     assert.equal(url, "/json");
     assert.equal(options.method, "POST");                         // Commands are POSTed as JSON
     assert.equal(options.headers["Content-Type"], "application/json");
@@ -195,7 +233,7 @@ const shot = (p, seq, n, type, x = 0, y = 0, utc = 0) =>
   p.get("calibrate").click();
   assert.ok(!p.get("calib").classList.contains("hidden"));
   await settle();
-  assert.deepEqual(requests[0], { ECHO: 0 });
+  assert.deepEqual(requests, ['read', { ECHO: 0 }]);
   assert.equal(p.get("calText").textContent, "Offset 0.25 mm right · 0.50 mm down");
   assert.ok(p.get("calSave").disabled);                          // Nothing changed yet
   p.run("prefs.calStep = 0.5");
@@ -208,7 +246,7 @@ const shot = (p, seq, n, type, x = 0, y = 0, utc = 0) =>
   assert.ok(!p.get("calSave").disabled);
   p.get("calSave").click();
   await settle(); await settle();
-  assert.deepEqual(requests.slice(1), [{ X_OFFSET: 0.75, Y_OFFSET: 0.5 }, { ECHO: 0 }]);
+  assert.deepEqual(requests.slice(2), ['read', { ECHO: 0 }, { X_OFFSET: 0.75, Y_OFFSET: 0.5 }, 'read', { ECHO: 0 }]);
   assert.match(p.get("calNote").textContent, /^Saved on the target/);
   assert.equal(hit().attrs.cx, "10");                           // Saved: the old shot keeps its place
   locked = true;
@@ -220,17 +258,30 @@ const shot = (p, seq, n, type, x = 0, y = 0, utc = 0) =>
   p.get("calClose").click();
   assert.ok(p.get("calib").classList.contains("hidden"));
 
-  // Current firmware: the hello carries the offsets, so only the setting is sent
-  requests.length = 0; locked = false;
-  p.run("receive({hello: 'freETarget', name: 'Lane 5', next_seq: 3, target: 100, clock: 'ntp', x_offset: 1.5, y_offset: -0.25})");
+  // Current firmware: fetch fresh offsets even when the hello contains older values.
+  requests.length = 0; locked = false; currentFirmware = true;
+  offsets = { x: 2, y: -0.5 };                                 // Changed by client B after A connected
+  p.run("receive({hello: 'freETarget', name: 'Lane 5', next_seq: 4, target: 100, clock: 'ntp', x_offset: 1.5, y_offset: -0.25})");
   p.get("calibrate").click();
-  assert.equal(p.get("calText").textContent, "Offset 1.50 mm right · 0.25 mm down");
+  assert.ok(p.get('calSave').disabled);
+  await settle();
+  assert.equal(p.get("calText").textContent, "Offset 2.00 mm right · 0.50 mm down");
   p.get("calDown").click();
   p.get("calSave").click();
   await settle(); await settle();
-  assert.deepEqual(requests, [{ X_OFFSET: 1.5, Y_OFFSET: -0.75 }]);
+  assert.deepEqual(requests, ['read', 'read', { X_OFFSET: 2, Y_OFFSET: -1 }, 'read']);
   assert.match(p.get("calNote").textContent, /^Saved on the target/);
-  assert.equal(p.run("hello.y_offset"), -0.75);
+  assert.equal(p.run("hello.y_offset"), -1);
+  assert.deepEqual(offsets, { x: 2, y: -1 });
+  // A concurrent change while the editor is open is detected before writing.
+  requests.length = 0;
+  p.get('calRight').click();
+  offsets = { x: 3, y: -1 };
+  p.get('calSave').click();
+  await settle(); await settle();
+  assert.deepEqual(requests, ['read']);
+  assert.match(p.get('calNote').textContent, /Another client changed/);
+  assert.deepEqual(offsets, { x: 3, y: -1 });
   p.get("calClose").click();
 
   // ---- The report: eight sections per page, sighters first, running totals ----

@@ -98,10 +98,22 @@ def main():
         except urllib.error.HTTPError as error:
             assert error.code == 415, error.code
         runtime.firmware_command({"X_OFFSET": 1.25})
+        with urllib.request.urlopen(runtime.page_url + "calibration", timeout=10) as response:
+            assert response.headers["Cache-Control"] == "no-store"
+            assert json.load(response) == {"x_offset": 1.25, "y_offset": 0}
         with WebSocket(runtime.ws_url, timeout=10) as ws:
             assert ws.receive()["x_offset"] == 1.25
         runtime.firmware_command({"X_OFFSET": 0})
+        with urllib.request.urlopen(runtime.page_url + "calibration", timeout=10) as response:
+            assert json.load(response) == {"x_offset": 0, "y_offset": 0}
         print("PASS: /json runs commands as a JSON POST; GET runs only ECHO, VERSION and MFS?", flush=True)
+        with socket.create_connection(("127.0.0.1", runtime.http_port), timeout=10) as stalled:
+            stalled.sendall(b"POST /json HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n"
+                            b"Content-Length: 32\r\n\r\n{")
+            assert stalled.recv(1) == b"", "an incomplete request was not closed on timeout"
+        with urllib.request.urlopen(runtime.page_url + "calibration", timeout=10) as response:
+            assert response.status == 200
+        print("PASS: calibration reads fresh offsets; an incomplete POST times out and HTTP stays available", flush=True)
         shot_seqs = []
         pc_client = socket.create_connection(("127.0.0.1", runtime.tcp_port), timeout=10)  # The PC client's port
         with WebSocket(runtime.ws_url, timeout=10) as ws:
@@ -187,6 +199,21 @@ def main():
             ws.send({"AFTER": 0})
             assert not [e for e in collect(ws) if "shot" in e]
         print("PASS: explicit session start opens a new empty session", flush=True)
+        with WebSocket(runtime.ws_url, timeout=10) as ws:
+            ws.receive()
+            ws.send({"AFTER": 0})
+            collect(ws)
+            for name in ("Pistol Final", "Pistol Match"):
+                runtime.firmware_command({"EVENT": name})
+                runtime.firmware_command({"SESSION": 0})
+                runtime.firmware_command({"SESSION": 2})
+                while True:
+                    change = ws.receive()
+                    if change.get("change") == "mode":
+                        assert change["event"] == name, change
+                        break
+            runtime.firmware_command({"EVENT": "Pistol Practice", "SESSION": 0})
+        print("PASS: another client's session changes carry the new event before any shots", flush=True)
         assert not runtime.board.dropped, "emulator dropped scheduled sensor events"
         assert not runtime.board.broadcasts_dropped, "emulator dropped board notifications"
         assert runtime.board.max_lateness_ns <= 10000, "native event lateness exceeded 10 us"

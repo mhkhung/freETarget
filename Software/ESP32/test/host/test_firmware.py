@@ -73,7 +73,21 @@ def main():
                 raise RuntimeError("Could not find " + name)
             parts.append(found.group())
         (build / "shot_journal_host.inc").write_text("\n\n".join(parts) + "\n")
-        for name in ("test_json_stream", "test_timed_fire", "test_helpers", "test_json_text", "test_shot_journal"):
+        source = (MAIN / "TCPIP/http_services.c").read_text()
+        parts = re.findall(r"^#define JSON_(?:POST_MAX|BODY_MS)\s+[^\n]+", source, re.MULTILINE)
+        for name in ("service_post_json", "service_get_calibration"):
+            found = re.search(r"^static esp_err_t " + name + r"\(httpd_req_t \*req\)\n\{.*?^\}", source, re.MULTILINE | re.DOTALL)
+            if found is None:
+                raise RuntimeError("Could not find " + name)
+            parts.append(found.group())
+        (build / "http_services_host.inc").write_text("\n\n".join(parts) + "\n")
+        source = (MAIN / "TCPIP/ws_api.c").read_text()
+        found = re.search(r"^static bool send_event\(.*?^\}", source, re.MULTILINE | re.DOTALL)
+        if found is None:
+            raise RuntimeError("Could not find send_event")
+        (build / "ws_event_host.inc").write_text(found.group() + "\n")
+        for name in ("test_json_stream", "test_timed_fire", "test_helpers", "test_json_text", "test_shot_journal",
+                     "test_http_services", "test_ws_event"):
             binary = build / name
             sources = [str(HERE / (name + ".c"))]
             if name == "test_shot_journal":

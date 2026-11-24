@@ -65,6 +65,8 @@
  *                  (100 air pistol, 110 air rifle, 500 50 m pistol,
  *                  510 50 m rifle, +1 for practice; 0 unknown) and "utc"
  *                  its time (0 unknown).  Shots that follow belong to it.
+ *                  Changes in the current session also carry "event", the
+ *                  current event name; historical names are not journaled.
  *
  *   {"sessions":[{"session":5, "first_seq":40, "last_seq":75,
  *    "shots":30, "sighters":5, "target":110, "session_type":4,

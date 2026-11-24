@@ -64,6 +64,7 @@ static esp_err_t service_get_who(httpd_req_t *req);                             
 static esp_err_t service_get_FreeETarget_png(httpd_req_t *req);                        // Icon for the FreeETarget page
 static esp_err_t service_get_json(httpd_req_t *req);                                   // Read-only JSON commands (GET)
 static esp_err_t service_post_json(httpd_req_t *req);                                  // JSON commands (POST)
+static esp_err_t service_get_calibration(httpd_req_t *req);                            // Current offsets, without a full ECHO
 static esp_err_t service_get_live(httpd_req_t *req);                                   // WebSocket test page
 static esp_err_t service_get_app(httpd_req_t *req);                                    // Athlete page
 static esp_err_t http_404_error_handler(httpd_req_t *req, httpd_err_code_t err);       // Create a URL not found handler
@@ -82,6 +83,7 @@ const my_uri_t uri_list[] = {
     {DEFAULT_HTTP_PORT, "Target info",         URI("/who", service_get_who, NULL)                          },
     {DEFAULT_HTTP_PORT, "JSON status: ECHO, VERSION, MFS? (POST other commands)", URI("/json", service_get_json, NULL) },
     {DEFAULT_HTTP_PORT, "",                    {.uri = "/json", .method = HTTP_POST, .handler = service_post_json, .user_ctx = NULL} },
+    {DEFAULT_HTTP_PORT, "",                    URI("/calibration", service_get_calibration, NULL)         },
     {DEFAULT_HTTP_PORT, "",                    URI("/favicon.ico", service_get_FreeETarget_png, NULL)      },
 
     {EVENT_HTTP_PORT,   "Target control menu", URI("/", service_get_menu, (void *)&event_menu_ctx)         }, // Control back channel
@@ -375,6 +377,17 @@ static esp_err_t service_get_help(httpd_req_t *req)
  *------------------------------------------------------------*/
 #define JSON_WAIT_MS  5000                          // Longest a /json request waits for its command
 #define JSON_POST_MAX CONFIG_HTTPD_MAX_URI_LEN      // Longest command (the same as a GET can carry)
+#define JSON_BODY_MS  5000                          // Total receive budget, including clients sending very slowly
+
+static esp_err_t service_get_calibration(httpd_req_t *req)
+{
+  char text[128];
+
+  snprintf(text, sizeof(text), "{\"x_offset\":%.2f,\"y_offset\":%.2f}", (double)json_x_offset, (double)json_y_offset);
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  return httpd_resp_sendstr(req, text);
+}
 
 static bool json_busy(void)                         // A command is queued or running
 {
@@ -452,6 +465,7 @@ static esp_err_t service_post_json(httpd_req_t *req)
   char type[48];                                    // Content-Type header
   int  got;                                         // Bytes received so far
   int  n;
+  TickType_t started = xTaskGetTickCount();
 
   DLT(DLT_HTTP, SEND(CONSOLE, sprintf(_xs, "service_post_json(%d bytes)", (int)req->content_len);))
 
@@ -470,15 +484,14 @@ static esp_err_t service_post_json(httpd_req_t *req)
 
   for ( got = 0; got < (int)req->content_len; got += n )
   {
-    n = httpd_req_recv(req, command + got, req->content_len - got);
-    if ( n == HTTPD_SOCK_ERR_TIMEOUT )
+    if ( (TickType_t)(xTaskGetTickCount() - started) >= pdMS_TO_TICKS(JSON_BODY_MS) )
     {
-      n = 0;                                        // Keep waiting for the rest of the body
-      continue;
+      return ESP_FAIL;                              // Close incomplete requests instead of blocking port 80
     }
+    n = httpd_req_recv(req, command + got, req->content_len - got);
     if ( n <= 0 )
     {
-      return ESP_FAIL;                              // The client went away: close the socket
+      return ESP_FAIL;                              // Includes receive timeout: close the socket
     }
   }
   command[got] = 0;
