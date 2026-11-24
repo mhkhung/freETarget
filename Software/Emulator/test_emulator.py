@@ -11,6 +11,7 @@ import protocol as wire
 from board import ARM_SETTLE_NS, Board, CLOCK_PIN, crc8
 from physics import Target, speed_of_sound
 from prepare import partition, refresh_firmware
+from runtime import dashboard_host_ok
 from websocket import WebSocket
 
 
@@ -166,6 +167,19 @@ class BoardTests(unittest.TestCase):
         board.fire(0, 0, missing=("E",))
         board.next_quantum()
         self.assertEqual({wire.fields(m[6])[1] for m in sent if 6 in m}, {5, 7, 15})
+
+
+class DashboardHostTests(unittest.TestCase):
+    def test_loopback_accepts_only_127_0_0_1(self):
+        self.assertTrue(dashboard_host_ok("127.0.0.1:18888", 18888, False))
+        for host in ("localhost:18888", "192.168.1.20:18888", "127.0.0.1:18889", None):
+            self.assertFalse(dashboard_host_ok(host, 18888, False), host)
+
+    def test_lan_accepts_ip_addresses_but_not_names(self):
+        for host in ("127.0.0.1:18888", "192.168.1.20:18888", "10.0.0.5:18888"):
+            self.assertTrue(dashboard_host_ok(host, 18888, True), host)
+        for host in ("evil.example:18888", "localhost:18888", "192.168.1.20:80", "192.168.1.20", "[::1]:18888", "", None):
+            self.assertFalse(dashboard_host_ok(host, 18888, True), host)
 
 
 class FlashTests(unittest.TestCase):

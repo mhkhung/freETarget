@@ -195,8 +195,8 @@ The key logs are `target-console.log` and `target-emulator.log`.
 | Board co-simulation | 18990 | 19090 |
 | Emulator control | 18991 | 19091 |
 
-The dashboard, firmware forwarding, board and control sockets bind to loopback
-unless `run --lan` is used (below).
+The dashboard and firmware forwarding bind to loopback unless `run --lan` is
+used (below). The board and control sockets always bind to loopback.
 Guest-initiated TCP/UDP is restricted; DNS points to localhost so the fixture
 does not contact public time/name servers. No TAP device, bridge or root access
 is needed. Dashboard HTTP mutations require JSON and reject foreign origins.
@@ -208,23 +208,28 @@ interactive firmware instance/ports.
 The PC client connects over TCP to the target's port 1090, forwarded to 1090 on
 this computer. On the same computer, connect it to `127.0.0.1` port 1090.
 
-To reach the emulator from another machine (a PC client on a Windows laptop,
-or a phone or tablet showing the athlete page), start it with:
+To reach the emulator from another machine (the dashboard or athlete page in
+another computer's browser, a PC client on a Windows laptop, or a phone or
+tablet), start it with:
 
 ```sh
 python3 Software/Emulator/emulator.py run --lan
 ```
 
-It prints this computer's address. Point the PC client at that address, port
-1090, and browsers at `http://<address>:18000/`. The emulated target is not on
+It prints this computer's address. Open the dashboard at
+`http://<address>:18888/`, point the PC client at that address, port 1090, and
+other browsers at `http://<address>:18000/` for the athlete page. Use the
+number, not a host name: the dashboard refuses names so that a web site cannot
+point its own domain at this computer and drive the dashboard from your browser. The emulated target is not on
 your real network, so its `FET-TARGET` mDNS name does not resolve: use the IP
 address. macOS may ask whether `esp-emu` may accept incoming connections.
 
-`--lan` opens only the firmware's own services: the athlete page, its
-WebSocket and the PC client port. Like a real target on the range Wi-Fi they
-have no password, so anyone on the network can send commands. The dashboard,
-board co-simulation and emulator control ports can fire shots and reset the
-CPU, so they always stay on loopback.
+`--lan` opens the dashboard and the firmware's own services: the athlete page,
+its WebSocket and the PC client port. None of them has a password, so anyone on
+the network can send commands, and through the dashboard fire shots and reset
+the virtual CPU. Use it only on a network you trust. The dashboard still
+refuses control requests from other web sites. The board co-simulation and
+emulator control ports stay on loopback; the dashboard reaches them locally.
 
 Implementation references:
 [Espressif emulator](https://github.com/espressif/esp-emulator),

@@ -47,6 +47,11 @@ function zoomAt(view, point, factor) {
   const clamp = v => Math.max(-300, Math.min(300, v));
   return {cx: clamp(point.x - (point.x - view.cx) * k), cy: clamp(point.y - (point.y - view.cy) * k), extent};
 }
+// The firmware page on the same host the dashboard was opened with, so another
+// machine (run --lan) gets this computer's address rather than its own loopback.
+function firmwarePage(location, state) {
+  return `${location.protocol}//${location.hostname}:${state.http_port}/`;
+}
 function presetView(name, face) {
   return {cx: 0, cy: 0, extent: name === 'lanes' ? 300 : name === 'sensors' ? 150 : FACES[face].card / 2 + 5};
 }
@@ -84,7 +89,7 @@ $('face').onchange=async()=>{const f=FACES[$('face').value];try{await post('comm
 for(const [id,path,body] of [['session','command',{SESSION:0}],['end','command',{SESSION_END:0}],['reset','reset',{}]])$(id).onclick=async()=>{try{await post(path,body);$('message').textContent=id==='reset'?'Resetting the ESP32…':'Command sent.'}catch(e){$('message').textContent=e.message}};
 $('environment').onclick=async()=>{try{await post('environment',{temperature:+$('temperature').value,humidity:+$('humidity').value});$('message').textContent='Environment updated.'}catch(e){$('message').textContent=e.message}};
 async function poll(){try{const r=await fetch('/api/status');state=await r.json();$('status').textContent=state.ready?'Connected · '+(state.armed?'armed':'rearming'):state.error||'Booting firmware…';$('status').className=state.ready?'up':'';
-if(state.ready&&!linked){$('firmware').src=state.page_url;$('open').href=state.page_url;linked=true}
+if(state.ready&&!linked){const page=firmwarePage(location,state);$('firmware').src=page;$('open').href=page;linked=true}
 const now=firmwareFace(state.events);if(now&&now!==face&&document.activeElement!==$('face')){face=now;$('face').value=now;if($('extent').value==='card')view=presetView('card',face)}
 for(const id of ['session','end','reset','face'])$(id).disabled=!state.ready;$('center').disabled=!state.ready||!state.armed;
 const reports=state.events.filter(e=>'shot'in e&&!e.history);$('shots').textContent=reports.length;$('time').textContent=state.time_s.toFixed(1);

@@ -1,5 +1,6 @@
 """Own emulator process lifetime, virtual board, and local dashboard."""
 import collections
+import ipaddress
 import json
 import shutil
 import signal
@@ -24,6 +25,7 @@ class Runtime:
         # Only the firmware's own services (athlete page, WebSocket, PC client
         # TCP) may be offered to the network. The dashboard, co-simulation and
         # control sockets can fire shots and reset the CPU: always loopback.
+        # The dashboard reaches them on this computer; serve() puts it on the LAN.
         self.lan = lan
         self.firmware_bind = "0.0.0.0" if lan else "127.0.0.1"
         self.cosim_port = 18990 + offset
@@ -196,7 +198,8 @@ class Runtime:
                     "speed_m_s": speed_of_sound(self.board.target.temperature, self.board.target.humidity) * 1000,
                     "sensor_positions": self.board.target.sensors(),
                     "sensor_diameter_mm": self.board.target.diameter_mm,
-                    "page_url": self.page_url, "ws_url": self.ws_url, "tcp_port": self.tcp_port, "lan": self.lan,
+                    "page_url": self.page_url, "ws_url": self.ws_url, "http_port": self.http_port,
+                    "tcp_port": self.tcp_port, "lan": self.lan,
                     "expected": list(self.board.expected), "events": list(self.events), "logs": list(self.logs)[-60:]}
 
     def close(self):
@@ -224,6 +227,22 @@ def lan_address():
             return None
 
 
+def dashboard_host_ok(host, port, lan):
+    """Accept the dashboard only under a name that cannot be a DNS rebinding.
+
+    Loopback: exactly 127.0.0.1.  LAN: any IPv4 address, typed as a number.
+    A web site could point its own domain name at this computer and then send
+    requests as if from the same origin, so host names are refused.
+    """
+    if not lan:
+        return host == f"127.0.0.1:{port}"
+    name, _, number = (host or "").rpartition(":")
+    try:
+        return number == str(port) and ipaddress.ip_address(name).version == 4
+    except ValueError:
+        return False
+
+
 def serve(port, fresh, lan=False):
     runtime = Runtime(fresh=fresh, lan=lan)
 
@@ -241,9 +260,15 @@ def serve(port, fresh, lan=False):
             self.end_headers()
             self.wfile.write(data)
 
+        def host_refused(self):
+            if dashboard_host_ok(self.headers.get("Host"), port, lan):
+                return False
+            self.respond({"error": "open the dashboard by IP address, e.g. "
+                          f"http://{'<this computer>' if lan else '127.0.0.1'}:{port}/"}, 403)
+            return True
+
         def do_GET(self):
-            if self.headers.get("Host") != f"127.0.0.1:{port}":
-                self.respond({"error": "use the loopback dashboard URL"}, 403)
+            if self.host_refused():
                 return
             if self.path == "/":
                 self.respond((ROOT / "dashboard.html").read_bytes(), kind="text/html; charset=utf-8")
@@ -254,11 +279,10 @@ def serve(port, fresh, lan=False):
 
         def do_POST(self):
             try:
-                if self.headers.get("Host") != f"127.0.0.1:{port}":
-                    self.respond({"error": "use the loopback dashboard URL"}, 403)
+                if self.host_refused():
                     return
                 origin = self.headers.get("Origin")
-                if origin and origin != f"http://127.0.0.1:{port}":
+                if origin and origin != f"http://{self.headers['Host']}":
                     self.respond({"error": "cross-origin control request refused"}, 403)
                     return
                 if self.headers.get("Content-Type", "").split(";")[0] != "application/json":
@@ -294,17 +318,17 @@ def serve(port, fresh, lan=False):
             except (ValueError, TypeError, KeyError, RuntimeError, OSError) as error:
                 self.respond({"error": str(error)}, 400)
 
-    with ThreadingHTTPServer(("127.0.0.1", port), Handler) as server:
+    with ThreadingHTTPServer(("0.0.0.0" if lan else "127.0.0.1", port), Handler) as server:
         try:
             runtime.start()
-            print(f"Virtual target: http://127.0.0.1:{port}/", flush=True)
-            print(f"Firmware console: {RUNTIME / 'target-console.log'}", flush=True)
             host = (lan_address() or "<this computer's IP>") if lan else "127.0.0.1"
+            print(f"Virtual target: http://{host}:{port}/", flush=True)
+            print(f"Firmware console: {RUNTIME / 'target-console.log'}", flush=True)
             print(f"Athlete page: http://{host}:{runtime.http_port}/", flush=True)
             print(f"PC client (TCP): {host} port {runtime.tcp_port}", flush=True)
             if lan:
-                print("LAN mode: the athlete page, WebSocket and PC client port accept connections from other "
-                      "machines; the dashboard stays on this computer.", flush=True)
+                print("LAN mode: the dashboard, athlete page, WebSocket and PC client port accept connections "
+                      "from other machines. Anyone on this network can fire shots and reset the target.", flush=True)
             print("Stop with Ctrl-C, or from any terminal: python3 Software/Emulator/emulator.py stop", flush=True)
             server.serve_forever()
         finally:

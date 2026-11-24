@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const vm = require("node:vm");
 const source = fs.readFileSync(__dirname + "/dashboard.html", "utf8");
-const functions = ["clickPosition", "zoomAt", "presetView", "firmwareFace", "firmwarePosition"].map(name => {
+const functions = ["clickPosition", "zoomAt", "presetView", "firmwareFace", "firmwarePosition", "firmwarePage"].map(name => {
   const match = source.match(new RegExp(`function ${name}\\([^)]*\\) \\{[\\s\\S]*?^\\}`, "m"));
   assert.ok(match, name);
   return match[0];
@@ -36,4 +36,6 @@ assert.equal(context.firmwareFace([{hello: "freETarget", target: 101}, {change: 
 assert.equal(context.firmwareFace([{change: "new", target: 110}, {change: "new", target: 100}]), "pistol");
 assert.equal(context.firmwareFace([{shot: 1}]), null);
 assert.equal(JSON.stringify(context.firmwarePosition({x: 4, y: 6})), JSON.stringify({x: 4, y: -6}));
-console.log("PASS: dashboard click coordinates (zoomed and panned), zoom limits, face presets and firmware overlays use negative Y above centre");
+assert.equal(context.firmwarePage({protocol: "http:", hostname: "127.0.0.1"}, {http_port: 18000}), "http://127.0.0.1:18000/");
+assert.equal(context.firmwarePage({protocol: "http:", hostname: "192.168.1.20"}, {http_port: 18000}), "http://192.168.1.20:18000/");
+console.log("PASS: dashboard click coordinates (zoomed and panned), zoom limits, face presets and firmware overlays use negative Y above centre; the firmware page follows the dashboard host");

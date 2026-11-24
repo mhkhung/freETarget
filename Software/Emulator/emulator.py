@@ -125,9 +125,9 @@ def main():
     build.add_argument("--build", action="store_true", help="refresh and rebuild the firmware source copy")
     run = commands.add_parser("run", help="start the virtual board and click-to-fire dashboard")
     run.add_argument("--fresh", action="store_true", help="start with a copy of the prepared factory flash")
-    run.add_argument("--port", type=int, default=18888, help="dashboard port (loopback only)")
+    run.add_argument("--port", type=int, default=18888, help="dashboard port")
     run.add_argument("--lan", action="store_true",
-                     help="let other machines reach the athlete page, WebSocket and PC client port (1090)")
+                     help="let other machines reach the dashboard, athlete page, WebSocket and PC client port (1090)")
     commands.add_parser("smoke", help="exercise real firmware APIs, shot calculation and restart recovery")
     halt = commands.add_parser("stop", help="stop running emulators (including background ones), saving flash")
     halt.add_argument("--timeout", type=float, default=10.0, help="seconds to wait before escalating")
