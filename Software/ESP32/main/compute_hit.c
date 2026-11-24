@@ -263,7 +263,7 @@ unsigned int compute_hit(shot_record_t *shot)      // Storing the results
     x_avg /= 4.0d;
     y_avg /= 4.0d;
 
-    estimate = sqrt(SQ(s[location].x - x_avg) + SQ(s[location].y - y_avg));
+    estimate = sqrt(SQ(s[location].x - x_avg) + SQ(s[location].y - y_avg) + SQ(z_offset_clock)); // Slant range, like the counts
     error    = fabs(last_estimate - estimate);
 
     DLT(DLT_APPLICATION | DLT_VERBOSE,
@@ -290,6 +290,41 @@ unsigned int compute_hit(shot_record_t *shot)      // Storing the results
   }
 
   return location;
+}
+
+/*----------------------------------------------------------------
+ *
+ * @function: distance_error
+ *
+ * @brief: How far a position is from what the sensors heard
+ *
+ * @return: Sum of the differences in clock counts
+ *
+ *----------------------------------------------------------------
+ *
+ * Each sensor heard the shot count + estimate counts (slant range)
+ * after it happened.  Compare that, on the paper, with the distance
+ * from (x, y) to the sensor.
+ *
+ *--------------------------------------------------------------*/
+static sensor_t *const sensor_list = s;          // find_xy_3D()'s argument hides s[]
+
+static real_t distance_error(real_t x, real_t y, // Position to check (clock counts)
+                             real_t estimate,    // Slant range to the reference sensor
+                             real_t z_offset_clock)
+{
+  real_t error, heard;
+  int    i;
+
+  error = 0;
+  for ( i = N; i <= W; i++ )
+  {
+    heard = SQ(sensor_list[i].count + estimate) - SQ(z_offset_clock);
+    heard = (heard > 0) ? sqrt(heard) : 0;
+    error += fabs(sqrt(SQ(x - sensor_list[i].x) + SQ(y - sensor_list[i].y)) - heard);
+  }
+
+  return error;
 }
 
 /*----------------------------------------------------------------
@@ -354,9 +389,11 @@ bool find_xy_3D(sensor_t *s,             // Sensor to be operatated on
                 real_t    z_offset_clock // Time difference between paper and sensor plane
 )
 {
-  real_t ae, be;                         // Locations with error added
-  real_t rotation;                       // Angle shot is rotated through
-  real_t x;                              // Temporary value
+  real_t    ae, be;                      // Locations with error added
+  real_t    x;                           // Temporary value
+  real_t    ux, uy, nx, ny;              // Along and across the line to the next sensor
+  real_t    in_x, in_y, out_x, out_y;    // The two places the shot could be
+  sensor_t *next;                        // The next sensor clockwise
 
   /*
    * Check to see if the sensor data is correct.  If not, return an error
@@ -370,64 +407,71 @@ bool find_xy_3D(sensor_t *s,             // Sensor to be operatated on
   /*
    * It looks like we have valid data.  Carry on
    */
-  x = SQ(s->a + estimate); // - SQ(z_offset_clock);
+  x = SQ(s->a + estimate) - SQ(z_offset_clock); // Slant range to the distance on the paper
   if ( x < 0 )
   {
-    SQ(s->a + estimate);
+    x = 0;                 // Closer than the sensor plane: sqrt() would be NaN
     DLT(DLT_APPLICATION, SEND(CONSOLE, sprintf(_xs, "s->a is complex, truncting");))
   }
   ae = sqrt(x);            // Dimension with error included
 
-  x = SQ(s->b + estimate); // - SQ(z_offset_clock);
+  x = SQ(s->b + estimate) - SQ(z_offset_clock);
   if ( x < 0 )
   {
+    x = 0;
     DLT(DLT_APPLICATION, SEND(CONSOLE, sprintf(_xs, "s->b is complex, truncting");))
-    SQ(s->b + estimate);
   }
   be = sqrt(x);
 
-  if ( (ae + be) < s->c ) // Check for an accumulated round off error
+  if ( (be == 0)          // On the sensor (the formula would divide by zero)
+       || ((ae + be) < s->c) ) // or an accumulated round off error
   {
     s->angle_A = 0;       // Yes, then force to zero.
   }
   else
   {
-    s->angle_A = acos((SQ(ae) - SQ(be) - SQ(s->c)) / (-2.0d * be * s->c));
+    x = (SQ(ae) - SQ(be) - SQ(s->c)) / (-2.0d * be * s->c);
+    if ( x > 1 )          // Distances that do not quite make a triangle
+    {                     // (timing noise, or while the estimate settles)
+      x = 1;              // would make acos() NaN and lose the shot
+    }
+    if ( x < -1 )
+    {
+      x = -1;
+    }
+    s->angle_A = acos(x);
   }
 
   /*
-   *  Compute the X,Y based on the detection sensor
+   *  The shot is at angle_A from the line to the next sensor, on one side of
+   *  it or the other.  Shots near the edge of the card cross that line (it is
+   *  82 mm from the centre with a 232 mm sensor ring), so use the side whose
+   *  distances to all four sensors match what they heard.  Always taking the
+   *  side toward the centre mirrored those shots by several millimetres.
    */
-  rotation = 0;
-  switch ( s->index )
+  next = &sensor_list[(s->index + 1) % 4];
+  ux   = (next->x - s->x) / s->c;              // Along the line to the next sensor
+  uy   = (next->y - s->y) / s->c;
+  nx   = -uy;                                  // Across it, toward the centre
+  ny   = ux;
+  if ( (nx * -s->x + ny * -s->y) < 0 )
   {
-    case (N):
-      rotation = PI_ON_2 - PI_ON_4 - s->angle_A;
-      s->xs    = s->x + ((be)*sin(rotation));
-      s->ys    = s->y - ((be)*cos(rotation));
-      break;
-
-    case (E):
-      rotation = s->angle_A - PI_ON_4;
-      s->xs    = s->x - ((be)*cos(rotation));
-      s->ys    = s->y + ((be)*sin(rotation));
-      break;
-
-    case (S):
-      rotation = s->angle_A + PI_ON_4;
-      s->xs    = s->x - ((be)*cos(rotation));
-      s->ys    = s->y + ((be)*sin(rotation));
-      break;
-
-    case (W):
-      rotation = PI_ON_2 - PI_ON_4 - s->angle_A;
-      s->xs    = s->x + ((be)*cos(rotation));
-      s->ys    = s->y + ((be)*sin(rotation));
-      break;
-
-    default:
-      DLT(DLT_APPLICATION, SEND(CONSOLE, sprintf(_xs, "\n\nUnknown Rotation:, %d", s->index);))
-      break;
+    nx = -nx;
+    ny = -ny;
+  }
+  in_x  = s->x + be * (cos(s->angle_A) * ux + sin(s->angle_A) * nx);
+  in_y  = s->y + be * (cos(s->angle_A) * uy + sin(s->angle_A) * ny);
+  out_x = s->x + be * (cos(s->angle_A) * ux - sin(s->angle_A) * nx);
+  out_y = s->y + be * (cos(s->angle_A) * uy - sin(s->angle_A) * ny);
+  if ( distance_error(out_x, out_y, estimate, z_offset_clock) < distance_error(in_x, in_y, estimate, z_offset_clock) )
+  {
+    s->xs = out_x;
+    s->ys = out_y;
+  }
+  else
+  {
+    s->xs = in_x;
+    s->ys = in_y;
   }
 
   /*
@@ -435,17 +479,16 @@ bool find_xy_3D(sensor_t *s,             // Sensor to be operatated on
    */
   DLT(DLT_APPLICATION | DLT_VERBOSE, {
     SEND(CONSOLE, sprintf(_xs, "index: %d  a:%4.2f b: %4.2f ae: %4.2f  be: %4.2f c: %4.2f", s->index, s->a, s->b, ae, be, s->c);)
-    SEND(CONSOLE,
-         sprintf(_xs, " cos: %4.2f  sin: %4.2f  angle_A: %4.2f  x: %4.2f y: %4.2f", cos(rotation), sin(rotation), s->angle_A, s->x, s->y);)
-    SEND(CONSOLE, sprintf(_xs, " rotation: %4.2f  xs: %4.2f  ys: %4.2f", rotation, s->xs, s->ys);)
+    SEND(CONSOLE, sprintf(_xs, " angle_A: %4.2f  x: %4.2f y: %4.2f", s->angle_A, s->x, s->y);)
+    SEND(CONSOLE, sprintf(_xs, " inside: %4.2f, %4.2f  outside: %4.2f, %4.2f  xs: %4.2f  ys: %4.2f", in_x, in_y, out_x, out_y, s->xs, s->ys);)
   })
 
   /*
    *  All done, return.  The location is in the structure s->x and s->y
    */
-  if ( isnan(s->x) || isnan(s->y) ) // If the computation failed,
+  if ( isnan(s->xs) || isnan(s->ys) ) // If the computation failed,
   {
-    return false;                   // return an error
+    return false;                     // return an error
   }
 
   return true;
