@@ -151,6 +151,7 @@ const json_message JSON[] = {
 };
 
 int instr(char* s1, char* s2);
+unsigned int json_text_size(const json_message* entry);
 static void diag_delay(int x) { Serial.print(T("\r\n\"DELAY\":")); Serial.print(x); delay(x*1000);  return;}
 
 /*-----------------------------------------------------
@@ -201,8 +202,8 @@ bool read_JSON(void)
   unsigned int  i;      // Index across JSON message
   unsigned int  j;      // Index across JSON token table (JSON[])
            int  k;      // Result from string compare (-Ve => not found)
-  unsigned int  l;      // Index across the gpio init table (init_table)
-  unsigned int  m;      // Index into NONVOL text storage
+  unsigned int  m;      // Index into the text being saved
+  unsigned int  size;   // Room for a text value, including the null
   unsigned int  x;      // Temporary working variable
   char*         s;      // Pointer to stored text string
   double        y;
@@ -226,7 +227,7 @@ bool read_JSON(void)
     if ( ch == '?' )
     {
       show_echo();                         // Show status if ? entered
-      return;
+      return return_value;
     }
 
 /*
@@ -293,9 +294,8 @@ bool read_JSON(void)
   for ( i=0; i != got_right; i++)                             // Go across the JSON input 
   {
     j = 0;                                                      // Index across the JSON token table
-    l = 0;                                                      // Index across gpio init table
     
-    while ( (JSON[j].token != 0) || (init_table[l].port != 0xff) ) // Cycle through the tokens
+    while ( JSON[j].token != 0 )                                // Cycle through the tokens
     {
       if ( JSON[j].token != 0 )
       {
@@ -314,32 +314,58 @@ bool read_JSON(void)
                         
             case IS_TEXT:                                       // Convert to text
             case IS_SECRET:
-              while ( input_JSON[i+k] != '"' )                  // Skip to the opening quote
+              while ( (input_JSON[i+k] != '"')                  // Skip to the opening quote
+                      && (input_JSON[i+k] != 0) )               // but not past the end of the input
               {
                 k++; 
               }
+              if ( input_JSON[i+k] == 0 )                       // No text given, leave the setting alone
+              {
+                break;
+              }
               k++;                                              // Advance to the text
 
+/*
+ * Copy the text, but no more than the setting can hold (RAM and
+ * NON-VOL have the same size).  A longer value used to run over the
+ * settings that follow it.
+ */
               s = (char *)JSON[j].value;                        // Fake a pointer to text
-              *s = 0;                                           // Put in a null
+              size = json_text_size(&JSON[j]);
               m = 0;
-              EEPROM.put(JSON[j].non_vol, 0);                   // Put in a null
-              while ( input_JSON[i+k] != '"' )                  // Skip to the opening quote
+              while ( (input_JSON[i+k] != '"')                  // Copy up to the closing quote
+                      && (input_JSON[i+k] != 0) )               // or the end of the input
               {
-                if ( s != 0 )
+                if ( m < (size - 1) )                           // Room for this one and the null?
                 {
-                   *s = input_JSON[i+k];                        // Save the value
-                   s++;
-                   *s = 0;                                      // Null terminate 
-                }
-                
-                if ( JSON[j].non_vol != 0 )                     // Save to persistent storage if present
-                {
-                  EEPROM.put(JSON[j].non_vol+m, input_JSON[i+k]); // Store into NON-VOL
+                  if ( s != 0 )
+                  {
+                    s[m] = input_JSON[i+k];                     // Save the value
+                  }
+                  if ( JSON[j].non_vol != 0 )                   // Save to persistent storage if present
+                  {
+                    EEPROM.update(JSON[j].non_vol + m, input_JSON[i+k]);
+                  }
                   m++;
-                  EEPROM.put(JSON[j].non_vol+m, 0);             // Null terminate
+                }
+                else if ( m == (size - 1) )                     // Say so once
+                {
+                  Serial.print(T("\r\n")); Serial.print(JSON[j].token); Serial.print(T(" too long, kept ")); Serial.print(size - 1); Serial.print(T(" characters"));
+                  m++;
                 }
                 k++;
+              }
+              if ( m > (size - 1) )
+              {
+                m = size - 1;
+              }
+              if ( s != 0 )
+              {
+                s[m] = 0;                                       // Null terminate
+              }
+              if ( JSON[j].non_vol != 0 )
+              {
+                EEPROM.update(JSON[j].non_vol + m, 0);          // Null terminate
               }
               break;
               
@@ -710,3 +736,30 @@ static void show_test(int test_number)
    is_trace = trace;
    return;   
  }
+
+/*-----------------------------------------------------
+ * 
+ * function: json_text_size()
+ * 
+ * brief: Room for a text setting, including the null
+ * 
+ * return: Size of the setting in RAM, and in NON-VOL
+ * 
+ *-----------------------------------------------------
+ *
+ * The RAM buffer and its NON-VOL area have the same size
+ * (see nonvol.h).  Copies into them must stop here.
+ * 
+ *-----------------------------------------------------*/
+unsigned int json_text_size(const json_message* entry)
+{
+  if ( entry->value == (int*)json_wifi_ssid )
+  {
+    return sizeof(json_wifi_ssid);
+  }
+  if ( entry->value == (int*)json_wifi_pwd )
+  {
+    return sizeof(json_wifi_pwd);
+  }
+  return 1;                                 // Unknown text, keep it empty
+}

@@ -96,9 +96,8 @@ typedef struct shot_r shot_record_t;
 
 struct GPIO {
   byte port;
-  char* gpio_name;
-  byte in_or_out;
-  byte value;
+  byte in_or_out;       // The table in gpio.ino no longer has a name column.  With
+  byte value;           // it here, every pin was set up from the wrong column.
 };
 
 typedef struct GPIO GPIO_t;

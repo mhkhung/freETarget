@@ -1157,8 +1157,14 @@ char aux_spool_read(void)                                 // Take something out 
 
 void aux_spool_put(char ch)                               // Put something into the spool
 {
+    unsigned int next = (aux_spool_in+1) % sizeof(aux_spool);
+
+    if ( next == aux_spool_out )                          // Full: drop this byte.  Writing it
+    {                                                     // would make in == out and the whole
+      return;                                             // spool would look empty.
+    }
     aux_spool[aux_spool_in] = ch;
-    aux_spool_in = (aux_spool_in+1) % sizeof(aux_spool);
+    aux_spool_in = next;
 
     return;
 }
@@ -1180,8 +1186,14 @@ char json_spool_read(void)                                 // Take something out
 
 void json_spool_put(char ch)                               // Put something into the spool
 {
+    unsigned int next = (json_spool_in+1) % sizeof(json_spool);
+
+    if ( next == json_spool_out )                          // Full: drop this byte (see aux_spool_put)
+    {
+      return;
+    }
     json_spool[json_spool_in] = ch;
-    json_spool_in = (json_spool_in+1) % sizeof(json_spool);
+    json_spool_in = next;
 
     return;
 }
@@ -1318,6 +1330,7 @@ void digital_test(void)
   Serial.print(T("\r\nRUN FlipFlop: 0x"));           Serial.print(is_running(), HEX);   
   Serial.print(T("\r\nTemperature: "));              Serial.print(temperature_C());  Serial.print(T("'C "));
   Serial.print(speed_of_sound(temperature_C(), json_rh));  Serial.print(T("mm/us"));
+  volts = TO_VOLTS(analogRead(V_REFERENCE));
   Serial.print(T("\r\nV_REF: "));                    Serial.print(volts); Serial.print(T(" Volts"));
   Serial.print(T("\r\n"));
 

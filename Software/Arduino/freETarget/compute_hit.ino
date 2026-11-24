@@ -24,6 +24,7 @@ extern const char* which_one[4];
 extern int json_clock[4];
 
 static sensor_t sensor[4];
+static sensor_t* const sensor_list = sensor;  // find_xy_3D()'s argument hides sensor[]
 
 unsigned int  pellet_calibre;     // Time offset to compensate for pellet diameter
 
@@ -221,7 +222,7 @@ unsigned int compute_hit
     shot->xphys_mm = x_avg * clock_to_mm;         // Write this back into the shot record
     shot->yphys_mm = y_avg * clock_to_mm;
     
-    estimate = sqrt(sq(sensor[trigger_sensor].x_tick - x_avg) + sq(sensor[trigger_sensor].y_tick - y_avg));
+    estimate = sqrt(sq(sensor[trigger_sensor].x_tick - x_avg) + sq(sensor[trigger_sensor].y_tick - y_avg) + sq(z_offset_clock)); // Slant range, like the counts
     error = abs(last_estimate - estimate);
 
     if ( DLT(DLT_DIAG) )
@@ -345,6 +346,7 @@ static int adjust_clocks
  * Find the largest count.  This is the one closest to the shot
  */
   largest = 0;
+  trigger_sensor = N;                   // In case no count is above zero
   for (i=N; i <= W; i++)
   {
     sensor[i].count = shot->timer_count[i] + sensor[i].doppler;  // Adding because sound arrived "sooner"
@@ -473,6 +475,42 @@ static void target_geometry
  *                 
  *--------------------------------------------------------------*/
 
+/*----------------------------------------------------------------
+ *
+ * function: distance_error
+ *
+ * brief:    How far a position is from what the sensors heard
+ * 
+ * return:   Sum of the differences in clock ticks
+ *
+ *----------------------------------------------------------------
+ *
+ * Each sensor heard the shot count + estimate ticks (slant range)
+ * after the closest one.  Compare that, on the paper, with the
+ * distance from (x, y) to the sensor.
+ *
+ *--------------------------------------------------------------*/
+static double distance_error
+  (
+  double x,                         // Position to check (clock ticks)
+  double y,
+  double estimate,                  // Slant range to the closest sensor
+  double z_offset_clock             // Time difference between paper and sensor plane
+  )
+{
+  double error, heard;
+  int    i;
+
+  error = 0;
+  for (i=N; i <= W; i++)
+  {
+    heard = sq(sensor_list[i].count + estimate) - sq(z_offset_clock);
+    heard = (heard > 0) ? sqrt(heard) : 0;
+    error += fabs(sqrt(sq(x - sensor_list[i].x_tick) + sq(y - sensor_list[i].y_tick)) - heard);
+  }
+  return error;
+}
+
 bool find_xy_3D
     (
      sensor_t* sensor,      // Sensor to be operatated on
@@ -481,8 +519,10 @@ bool find_xy_3D
      )
 {
   double ae, be;            // Locations with error added
-  double rotation;          // Angle shot is rotated through
   double x;                 // Temporary value
+  double ux, uy, nx, ny;    // Along and across the line to the next sensor
+  double in_x, in_y, out_x, out_y; // The two places the shot could be
+  sensor_t* next;           // The next sensor clockwise
   
 /*
  * It looks like we have valid data.  Carry on
@@ -490,7 +530,7 @@ bool find_xy_3D
   x = sq(sensor->a + estimate) - sq(z_offset_clock);
   if ( x < 0 )
   {
-    sq(sensor->a + estimate);
+    x = 0;                                  // sqrt() of a negative number is NaN
     if ( DLT(DLT_DIAG) )
     {
       Serial.print(T("sensor->a is complex, truncting"));
@@ -505,54 +545,59 @@ bool find_xy_3D
     {
       Serial.print(T("sensor->b is complex, truncting"));
     }
-    sq(sensor->b + estimate);
+    x = 0;                                  // sqrt() of a negative number is NaN
   }
   be = sqrt(x);  
 
-  if ( (ae + be) < sensor->c )   // Check for an accumulated round off error
+  if ( (be == 0)                 // On the sensor (the formula would divide by zero)
+      || ((ae + be) < sensor->c) ) // or an accumulated round off error
     {
     sensor->angle_A = 0;         // Yes, then force to zero.
     }
   else
     {  
-    sensor->angle_A = acos( (sq(ae) - sq(be) - sq(sensor->c))/(-2.0d * be * sensor->c));
+    x = (sq(ae) - sq(be) - sq(sensor->c))/(-2.0d * be * sensor->c);
+    if ( x > 1 )                 // Distances that do not quite make a triangle
+    {                            // (timing noise, or while the estimate settles)
+      x = 1;                     // would make acos() NaN
+    }
+    if ( x < -1 )
+    {
+      x = -1;
+    }
+    sensor->angle_A = acos(x);
     }
   
 /*
- *  Compute the X,Y based on the detection sensor
+ *  The shot is at angle_A from the line to the next sensor, on one side of
+ *  it or the other.  Shots near the edge of the card cross that line (it is
+ *  82 mm from the centre with a 232 mm sensor ring), so use the side whose
+ *  distances to all four sensors match what they heard.  Always taking the
+ *  side toward the centre mirrored those shots by several millimetres.
  */
-  switch (sensor->index)
+  next = &sensor_list[(sensor->index + 1) % 4];
+  ux = (next->x_tick - sensor->x_tick) / sensor->c;   // Along the line to the next sensor
+  uy = (next->y_tick - sensor->y_tick) / sensor->c;
+  nx = -uy;                                           // Across it, toward the centre
+  ny = ux;
+  if ( (nx * -sensor->x_tick + ny * -sensor->y_tick) < 0 )
   {
-    case (N): 
-      rotation = PI_ON_2 - PI_ON_4 - sensor->angle_A;
-      sensor->xr_tick = sensor->x_tick + ((be) * sin(rotation));      // Relocating relative to the cardinal points
-      sensor->yr_tick = sensor->y_tick - ((be) * cos(rotation));
-      break;
-      
-    case (E): 
-      rotation = sensor->angle_A - PI_ON_4;
-      sensor->xr_tick = sensor->x_tick - ((be) * cos(rotation));
-      sensor->yr_tick = sensor->y_tick + ((be) * sin(rotation));
-      break;
-      
-    case (S): 
-      rotation = sensor->angle_A + PI_ON_4;
-      sensor->xr_tick = sensor->x_tick - ((be) * cos(rotation));
-      sensor->yr_tick = sensor->y_tick + ((be) * sin(rotation));
-      break;
-      
-    case (W): 
-      rotation = PI_ON_2 - PI_ON_4 - sensor->angle_A;
-      sensor->xr_tick = sensor->x_tick + ((be) * cos(rotation));
-      sensor->yr_tick = sensor->y_tick + ((be) * sin(rotation));
-      break;
-
-    default:
-      if ( DLT(DLT_DIAG) )
-      {
-        Serial.print(T("\n\nUnknown Rotation:")); Serial.print(sensor->index);
-      }
-      break;
+    nx = -nx;
+    ny = -ny;
+  }
+  in_x  = sensor->x_tick + be * (cos(sensor->angle_A) * ux + sin(sensor->angle_A) * nx);
+  in_y  = sensor->y_tick + be * (cos(sensor->angle_A) * uy + sin(sensor->angle_A) * ny);
+  out_x = sensor->x_tick + be * (cos(sensor->angle_A) * ux - sin(sensor->angle_A) * nx);
+  out_y = sensor->y_tick + be * (cos(sensor->angle_A) * uy - sin(sensor->angle_A) * ny);
+  if ( distance_error(out_x, out_y, estimate, z_offset_clock) < distance_error(in_x, in_y, estimate, z_offset_clock) )
+  {
+    sensor->xr_tick = out_x;
+    sensor->yr_tick = out_y;
+  }
+  else
+  {
+    sensor->xr_tick = in_x;
+    sensor->yr_tick = in_y;
   }
 
 /*
@@ -563,9 +608,10 @@ bool find_xy_3D
     Serial.print(T("index:")); Serial.print(sensor->index) ; 
     Serial.print(T(" a:"));        Serial.print(sensor->a);       Serial.print(T("  b:"));  Serial.print(sensor->b);
     Serial.print(T(" ae:"));       Serial.print(ae);         Serial.print(T("  be:")); Serial.print(be);    Serial.print(T(" c:")),  Serial.print(sensor->c);
-    Serial.print(T(" cos:"));      Serial.print(cos(rotation)); Serial.print(T(" sin: ")); Serial.print(sin(rotation));
     Serial.print(T(" angle_A:"));  Serial.print(sensor->angle_A); Serial.print(T("  x:"));  Serial.print(sensor->x_tick);  Serial.print(T(" y:"));  Serial.print(sensor->y_tick);
-    Serial.print(T(" rotation:")); Serial.print(rotation);   Serial.print(T("  xr:")); Serial.print(sensor->xr_tick); Serial.print(T(" yr:")); Serial.print(sensor->yr_tick);
+    Serial.print(T(" inside:"));   Serial.print(in_x); Serial.print(T(",")); Serial.print(in_y);
+    Serial.print(T(" outside:"));  Serial.print(out_x); Serial.print(T(",")); Serial.print(out_y);
+    Serial.print(T("  xr:")); Serial.print(sensor->xr_tick); Serial.print(T(" yr:")); Serial.print(sensor->yr_tick);
     }
  
 /*
@@ -753,10 +799,10 @@ void send_score
   if ( json_token == TOKEN_WIFI )
   {
     dtostrf(radius, 4, 2, str_c );
-    sprintf(str, ", \"r\":%s, ", str_c);
+    sprintf(str, ", \"r\":%s ", str_c);
     output_to_all(str);
     dtostrf(angle, 4, 2, str_c );
-    sprintf(str, ", \"a\":%s, ", str_c);
+    sprintf(str, ", \"a\":%s ", str_c);
     output_to_all(str);
   }
 #endif
@@ -774,10 +820,10 @@ void send_score
   {
     volts = analogRead(V_REFERENCE);
     dtostrf(TO_VOLTS(volts), 2, 2, str_c );
-    sprintf(str, ", \"V_REF\":%s, ", str_c);
+    sprintf(str, ", \"V_REF\":%s ", str_c);   // No trailing comma: the next field brings its own
       output_to_all(str);
     dtostrf(temperature_C(), 2, 2, str_c );
-    sprintf(str, ", \"T\":%s, ", str_c);
+    sprintf(str, ", \"T\":%s ", str_c);
     output_to_all(str);
     sprintf(str, ", \"VERSION\":%s ", SOFTWARE_VERSION);
     output_to_all(str);
@@ -818,8 +864,9 @@ void send_miss
   )
 {
   char str[256];                        // String holding buffer
+  char str_c[10];                       // Number as text
   
-  if ( json_send_miss != 0)               // If send_miss not enabled
+  if ( json_send_miss == 0 )              // If send_miss not enabled
   {
     return;                               // Do nothing
   }
@@ -835,7 +882,7 @@ void send_miss
       token_take();                              // Grab the token ring
       gpt = ONE_SECOND;
       while ( gpt 
-        && ( my_ring == whos_ring) )
+        && ( my_ring != whos_ring) )      // Wait until we hold the ring, as in send_score()
       { 
         token_poll();
       }
@@ -856,17 +903,21 @@ void send_miss
   {
     sprintf(str, "%s\"", namesensor[json_name_id]);
   }
-
+  else
+  {
+    sprintf(str, "%d\"", my_ring);       // As in send_score()
+  }
   output_to_all(str);
-  dtostrf((float)shot->shot_time/(float)(ONE_SECOND), 2, 2, str );
-  sprintf(str, ", \"time\":%s ", str);
+  dtostrf((float)shot->shot_time/(float)(ONE_SECOND), 2, 2, str_c );
+  sprintf(str, ", \"time\":%s ", str_c);
+  output_to_all(str);
 #endif
 
 
 #if ( S_XY )
   if ( json_token == TOKEN_WIFI )
   { 
-    sprintf(str, ", \"x\":0, \"y\":0 ");
+    sprintf(str, ", \"x\":1000, \"y\":1000 "); // Off the target: a client that ignores "miss" would score 0,0 as a 10.9
     output_to_all(str);
   }
 
@@ -967,7 +1018,7 @@ static void remap_target
   )
 {
   double distance, closest;        // Distance to bull in clock ticks
-  double dx, dy;                   // Best fitting bullseye
+  double dx = 0, dy = 0;           // Best fitting bullseye
   int i;
   
   new_target_t* ptr;               // Bull pointer
@@ -980,7 +1031,7 @@ static void remap_target
 /*
  * Find the closest bull
  */
-  if ( (json_target_type <= 1) || ( json_target_type > sizeof(ptr_list)/sizeof(new_target_t*) ) ) 
+  if ( (json_target_type <= 1) || ( json_target_type >= sizeof(ptr_list)/sizeof(new_target_t*) ) ) 
   {
     return;                         // Check for limits
   }

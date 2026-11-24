@@ -137,7 +137,6 @@ void esp01_init(void)
     Serial.print(T("esp01: Present"));
   }
   
-  json_token == TOKEN_WIFI;                     // If WiFi is present, then the TOKEN ring is disabled
   
 /*
  * There is an esp01 on the freETarget.  We need to program it
@@ -917,7 +916,7 @@ bool esp01_send_ch                      // Send a character
 
   str[0] = ch;
   str[1] = 0;
-  esp01_send(str, connection);
+  return esp01_send(str, connection);
 }
 
 bool esp01_send
@@ -1106,6 +1105,11 @@ void esp01_receive(void)
  */
   while ( aux_spool_available() != 0 ) // Nothing is waiting for us
   {
+    if ( (state == WAIT_DATA)          // Message data, but the queue is full?
+        && (((esp01_in_ptr + 1) % sizeof(esp01_in_queue)) == esp01_out_ptr) )
+    {
+      break;                           // Leave the rest in the AUX spool until read_JSON()
+    }                                  // has made room, rather than overwrite the queue
     ch = aux_spool_read();             // Pull in the next byte
     switch (state)                       // What do we do with it?
     {
@@ -1117,9 +1121,9 @@ void esp01_receive(void)
           state = WAIT_CONNECT;
         }
         
-        if ( (ch >= '0') && (ch <= (esp01_N_CONNECT + '0')) ) // Allow only legal connections
+        if ( (ch >= '0') && (ch <= '9') )  // Connection identifier (ex 0,CONNECT)
         {
-          connection = ch - '0';            // Nothing, pretend it is a CONNECT connection identifier (ex 0,CONNECT)  
+          connection = ch - '0';            // Checked against esp01_N_CONNECT before use
         }
         break;
 
@@ -1146,7 +1150,10 @@ void esp01_receive(void)
         if ( (message_type & IS_CONNECT) && (s_connect[i] == 0) )        // Reached the end of CONNECT?
         { 
           Serial.print(T("{\"CONNECTION_START\": ")); Serial.print(connection); Serial.print(T("}"));
-          esp01_connect[connection] = true;// Record the connection       
+          if ( connection < esp01_N_CONNECT ) // The ESP-01 allows 5, we keep track of 3
+          {
+            esp01_connect[connection] = true;// Record the connection
+          }
           POST_version();               // Send out the software version to keep the PC happy
           show_echo();                  // Send out the settings
           state = WAIT_IDLE;            // and go back to waiting
@@ -1154,7 +1161,10 @@ void esp01_receive(void)
         if ( (message_type & IS_CLOSED) && (s_closed[i] == 0) )         // Reached the end of CLOSED?
         {                 
           Serial.print(T("{\"CONNECTION_CLOSE\":")); Serial.print(connection); Serial.print(T("}"));
-          esp01_connect[connection] = false;// No longer a valid connection
+          if ( connection < esp01_N_CONNECT )
+          {
+            esp01_connect[connection] = false;// No longer a valid connection
+          }
           state = WAIT_IDLE;            // Go back to waiting       
         }
         if ( (message_type & IS_IPD) && (s_ipd[i] == 0) )               // Reached the end of IPD?
@@ -1174,7 +1184,7 @@ void esp01_receive(void)
       case WAIT_SIZE:                   // Scoop up the message size
         if ( ch == ':' )                // Stay here until you see a colin
         {
-          state = WAIT_DATA;            // Then jump to the next state
+          state = (count != 0) ? WAIT_DATA : WAIT_IDLE; // Then jump to the next state (if there is data)
         }
         else
         {
@@ -1253,7 +1263,7 @@ void esp01_close
 /*
  * Send out the AT break if needed
  */
-  if ( esp01_is_present() );
+  if ( esp01_is_present() )
   {
     AUX_SERIAL.print(T("+++"));
     delay(ONE_SECOND);

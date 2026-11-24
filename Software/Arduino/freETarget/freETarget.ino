@@ -512,6 +512,8 @@ unsigned int wait(void)
  *--------------------------------------------------------------*/
 unsigned int reduce(void)
 {
+  unsigned int first = last_shot;                             // Oldest shot waiting
+
 /*
  * See if any shots are allowed to be processed
  */
@@ -519,11 +521,11 @@ unsigned int reduce(void)
   {
     if ( DLT(DLT_APPLICATION) )
     {
-      Serial.print(T("Discarding shot: ")); Serial.print(last_shot); Serial.print(T("\r\nTrigger: ")); 
+      Serial.print(T("Discarding shot: ")); Serial.print(first); Serial.print(T("\r\nTrigger: ")); 
     }
     last_shot = this_shot;
-    send_miss(&record[last_shot]);
-    return FINISH;                                              // Throw out any shots while dark
+    send_miss(&record[first]);                                  // The discarded shot, not the empty
+    return FINISH;                                              // slot after it.  Throw out any shots while dark
   }
   
 /*
@@ -555,7 +557,7 @@ unsigned int reduce(void)
       if ( (json_paper_time + json_step_time) != 0 )            // Has the witness paper been enabled?
       {
         if ( ((json_paper_eco == 0)                             // ECO turned off
-            || ( sqrt(sq(record[this_shot].xphys_mm) + sq(record[this_shot].yphys_mm)) < json_paper_eco )) ) // Outside the black
+            || ( sqrt(sq(record[last_shot].xphys_mm) + sq(record[last_shot].yphys_mm)) < json_paper_eco )) ) // Inside the black (this shot, not the next empty slot)
         {
           drive_paper();                                        // to follow through.
         }
@@ -868,7 +870,7 @@ bool discard_shot(void)
   {
     if ( enable )
     {
-      Serial.print(T("\Rapid Fire armed")); 
+      Serial.print(T("Rapid Fire armed")); 
     }
     else
     {

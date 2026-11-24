@@ -99,7 +99,7 @@ void factory_nonvol
   
   gen_position(0); 
   x = 0;
-  EEPROM.put(vset_PWM, x);
+  EEPROM.put(NONVOL_vset_PWM, x);                          // Not vset_PWM, the pin number
   EEPROM.get(NONVOL_SERIAL_NO, serial_number);             // Remember the serial number
 
 /*
@@ -130,9 +130,9 @@ void factory_nonvol
         {
           EEPROM.put(JSON[i].non_vol, x);                    // Read in the value
         }
-        if ( JSON[j].value != 0 )
+        if ( JSON[i].value != 0 )
         {
-          *JSON[j].value = x;                               // Save the value
+          *JSON[i].value = x;                               // Save the value
         }
         break;
 
@@ -145,9 +145,9 @@ void factory_nonvol
         {
           EEPROM.put(JSON[i].non_vol, dx);                // Read in the value
         }
-        if ( JSON[j].d_value != 0 )
+        if ( JSON[i].d_value != 0 )
         {
-          *JSON[j].d_value = dx;                          // Save the value
+          *JSON[i].d_value = dx;                          // Save the value
         }
         break;
     }
@@ -360,6 +360,10 @@ void read_nonvol(void)
             while (1)                                           // Loop and copy the NONVOL 
             {
               EEPROM.get((JSON[i].non_vol+j), ch );
+              if ( j == (json_text_size(&JSON[i]) - 1) )       // No room for more, even if NONVOL
+              {                                                 // holds a longer (older) value
+                ch = 0;
+              }
               *((unsigned char*)(JSON[i].value) + j) = ch;     // Over to the working storage
               if ( ch == 0 )
               {

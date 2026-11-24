@@ -19,6 +19,8 @@ typedef struct  {
   unsigned int init_value;    // Initial Value
 } json_message;
 
+unsigned int json_text_size(const json_message* entry); // Room for a text setting, including the null
+
 #define IS_VOID       0       // Value is a void
 #define IS_TEXT       1       // Value is a string
 #define IS_SECRET     2       // Value is a string but hidden
