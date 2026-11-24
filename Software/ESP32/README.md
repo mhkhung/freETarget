@@ -183,7 +183,44 @@ permission, which it never gives, so a link or a page cannot change settings.
 For typing into a browser, a GET still works for the commands that only report:
 `/json?{"ECHO":0}`, `/json?{"VERSION":0}` and `/json?{"MFS?":0}`. Other commands
 sent as a GET get `405 Method Not Allowed`. A request waits until the previous
-command's output has finished (up to 5 seconds, then `503`).
+command's output has finished (up to 5 seconds, then `503`), and collects its
+own output for up to 15 seconds (`{"ECHO":0}` takes about 6).
+
+## Settings and firmware from the command line
+
+[Software/Utilities/fet.py](../Utilities/fet.py) changes settings that are
+not on the athlete page, such as the sensor depth `Z_OFFSET`, and loads
+firmware. It needs Python 3; USB needs `pip install pyserial`.
+
+```sh
+python3 Software/Utilities/fet.py --host 192.168.10.9 get Z_OFFSET
+python3 Software/Utilities/fet.py --host 192.168.10.9 set Z_OFFSET=15
+python3 Software/Utilities/fet.py --serial /dev/cu.usbserial-0001 get
+```
+
+`--host` is the target's address (192.168.10.9 when you join the target's own
+network); `--serial` a USB port (`COM3` on Windows). `set` reads the settings
+back and says if the target is locked. Add `--arduino` for the Arduino target,
+which has no web server.
+
+**Loading firmware.**
+- `flash esp32` writes the bootloader, partition table and app from
+  `build/` over USB (`pip install esptool`). Settings and saved shots are kept.
+  Use it the first time, and on units updated only over the air (it adds the
+  `shots` partition).
+- `update` loads `build/freeETarget.bin` over Wi-Fi (or USB) while the target
+  runs, then restarts it and checks the new build is running. Settings and saved
+  shots are kept. About 15 seconds for the image over Wi-Fi.
+
+  The target only accepts a build whose `CONFIG_APP_PROJECT_VER` (menuconfig,
+  "Application manager") compares higher than the running one, and stops until it
+  is restarted if sent another; `update` checks this first.
+
+  Older firmware: 6.3.5 to 6.4.2 read the download size as 0, so the download
+  fails and the target stops until it is restarted. Load this version over USB
+  once. Before 6.3.5, `update` works over USB, and over Wi-Fi with `--rate 2`
+  (that firmware takes in only 2.5 KB/s over Wi-Fi and loses what does not fit,
+  so it takes about 10 minutes).
 
 `GET /calibration` returns the current `x_offset` and `y_offset` as JSON with
 `Cache-Control: no-store`. The athlete page uses it before editing and saving,

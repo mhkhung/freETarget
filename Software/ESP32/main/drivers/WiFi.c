@@ -720,88 +720,56 @@ static void tcpip_server_io(void)
  * for each possible socket.
  *
  *******************************************************************************/
-void tcpip_socket_poll_0(void *parameters)
+/*
+ * Read only what the input queue has room for and leave the rest in the
+ * socket: TCP then holds the sender back.  Reading a whole buffer whatever the
+ * room dropped the bytes that did not fit (a firmware image sent over Wi-Fi
+ * was corrupted), and waiting 10 ticks after every read limited the
+ * connection to 2.5 KB/s.
+ */
+static void socket_poll(int n)
 {
-  int  length;
+  int  length, room;
   char rx_buffer[256];
-
-  DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "tcp_socket_poll_0()");))
 
   while ( 1 )
   {
-    if ( socket_list[0] > 0 )
+    room = tcpip_queue_room();
+    if ( (socket_list[n] > 0) && (room > 0) )
     {
-      length = recv(socket_list[0], rx_buffer, sizeof(rx_buffer), 0);
+      length = recv(socket_list[n], rx_buffer, (room < (int)sizeof(rx_buffer)) ? room : (int)sizeof(rx_buffer), 0);
       if ( length > 0 )
       {
         tcpip_socket_2_queue(rx_buffer, length);
+        continue;                              // More may be waiting
       }
     }
-    vTaskDelay(10);
+    vTaskDelay((room > 0) ? 10 : 1);           // Not connected, or wait for the queue to drain
   }
+}
+
+void tcpip_socket_poll_0(void *parameters)
+{
+  DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "tcp_socket_poll_0()");))
+  socket_poll(0);
 }
 
 void tcpip_socket_poll_1(void *parameters)
 {
-  int  length;
-  char rx_buffer[256];
-
   DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "tcp_socket_poll_1()");))
-
-  while ( 1 )
-  {
-    if ( socket_list[1] > 0 )
-    {
-      length = recv(socket_list[1], rx_buffer, sizeof(rx_buffer), 0);
-      if ( length > 0 )
-      {
-        tcpip_socket_2_queue(rx_buffer, length);
-      }
-    }
-    vTaskDelay(10);
-  }
+  socket_poll(1);
 }
 
 void tcpip_socket_poll_2(void *parameters)
 {
-  int  length;
-  char rx_buffer[256];
-
   DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "tcp_socket_poll_2()");))
-
-  while ( 1 )
-  {
-    if ( socket_list[2] > 0 )
-    {
-      length = recv(socket_list[2], rx_buffer, sizeof(rx_buffer), 0);
-      if ( length > 0 )
-      {
-        tcpip_socket_2_queue(rx_buffer, length);
-      }
-    }
-    vTaskDelay(10);
-  }
+  socket_poll(2);
 }
 
 void tcpip_socket_poll_3(void *parameters)
 {
-  int  length;
-  char rx_buffer[256];
-
   DLT(DLT_INFO, SEND(CONSOLE, sprintf(_xs, "tcp_socket_poll_3()");))
-
-  while ( 1 )
-  {
-    if ( socket_list[3] > 0 )
-    {
-      length = recv(socket_list[3], rx_buffer, sizeof(rx_buffer), 0);
-      if ( length > 0 )
-      {
-        tcpip_socket_2_queue(rx_buffer, length);
-      }
-    }
-    vTaskDelay(10);
-  }
+  socket_poll(3);
 }
 
 /*****************************************************************************

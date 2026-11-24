@@ -449,9 +449,9 @@ void OTA_serial(unsigned int OTA_download_size) // Size of the incoming file
   /*
    *  All done, halt and wait for the user to restart
    */
-  DLT(DLT_CRITICAL, SEND(CONSOLE, sprintf(_xs, "{\"RESPONSE\":\"PASS> Cycle power to start new firmware\"}");))
-  vTaskDelay(10);                                                       // Wait for the message to leave the buffer
-  OTA_halt_process(LED_OTA_READY, "Cycle power to start new firmware"); // Reboot the system
+  SEND(ALL, sprintf(_xs, "{\"RESPONSE\":\"PASS> Cycle power to start new firmware\"}");) // To whoever sent it, as the FAIL
+  vTaskDelay(10);                                                       // replies are.  Wait for it to leave the buffer
+  OTA_halt_process(LED_OTA_READY, "Cycle power to start new firmware"); // Any input restarts it
   return;
 }
 

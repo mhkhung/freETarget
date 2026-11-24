@@ -376,6 +376,7 @@ static esp_err_t service_get_help(httpd_req_t *req)
  *
  *------------------------------------------------------------*/
 #define JSON_WAIT_MS  5000                          // Longest a /json request waits for its command
+#define JSON_OUTPUT_MS 15000                        // Longest it collects the output ({"ECHO":0} takes about 6 s)
 #define JSON_POST_MAX CONFIG_HTTPD_MAX_URI_LEN      // Longest command (the same as a GET can carry)
 #define JSON_BODY_MS  5000                          // Total receive budget, including clients sending very slowly
 
@@ -426,7 +427,7 @@ static esp_err_t run_json(httpd_req_t *req, char *command)
   /*
    * Wait until the JSON task has read the command and finished with it.
    */
-  for ( waited = 0; waited < JSON_WAIT_MS; waited += 10 )
+  for ( waited = 0; waited < JSON_OUTPUT_MS; waited += 10 )
   {
     vTaskDelay(TICK_10ms);
     if ( (waited >= 50) && !json_busy() )

@@ -22,6 +22,7 @@ void serial_flush(int ports);                        // Get rid of everything
 int  tcpip_app_2_queue(char *buffer, int length);    // Save for later output to the socket
 int  tcpip_queue_2_socket(char *buffer, int length); // Take from queue and put to socket
 int  tcpip_socket_2_queue(char *buffer, int length); // Take from socket and queue
+int  tcpip_queue_room(void);                        // Bytes the TCPIP input queue can still take
 int  tcpip_queue_2_app(char *buffer, int length);    // Take from queue and return to application
 void aux_port_loopback_test(void);                   // Loopback the AUX port
 int  get_string(char destination[], int size);       // Collect a string from the input ports

@@ -22,7 +22,30 @@ def without_includes(source):
     return re.sub(r"^#include[^\n]*", "", source, flags=re.MULTILINE)
 
 
+def check_command_table():
+    """A command that takes a number must end its token with ':'.
+
+    handle_json() reads the value just after the token.  Without the colon it
+    reads ":1234" and gets 0: {"DOWNLOAD":size} then started a firmware
+    download of 0 bytes, which failed and stopped the target.
+    """
+    source = (MAIN / "json.c").read_text()
+    table = source[source.index("const json_message_t JSON[] = {"):]
+    table = table[:table.index("\n};")]
+    takes_value = {"DOWNLOAD", "FLASH"}              # Handlers that use the value they are given
+    bad = []
+    for show, token, value, convert, handler in re.findall(
+            r'\{\s*([A-Z +]+),\s*"((?:[^"\\]|\\.)*)",\s*([^,]+),\s*([A-Z_0-9 +]+),\s*([^,]+),', table):
+        name = token.strip('\\"').rstrip(':').strip('\\"')
+        if not token.endswith(":") and (value.strip() != "0" or name in takes_value):
+            bad.append(name)
+    if bad:
+        raise RuntimeError("JSON commands with a value but no ':' after the name: " + ", ".join(bad))
+    print("JSON commands: every command that takes a value has ':' after its name")
+
+
 def main():
+    check_command_table()
     compiler = shlex.split(os.environ.get("CC", "cc"))
     flags = shlex.split(os.environ.get("CFLAGS", "-std=c11 -Wall -Wextra -g -fsanitize=address,undefined"))
     # Keep warnings as errors except for existing diagnostics in the source

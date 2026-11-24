@@ -5,6 +5,7 @@ import re
 import shutil
 import socket
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.parse
@@ -107,6 +108,18 @@ def main():
         with urllib.request.urlopen(runtime.page_url + "calibration", timeout=10) as response:
             assert json.load(response) == {"x_offset": 0, "y_offset": 0}
         print("PASS: /json runs commands as a JSON POST; GET runs only ECHO, VERSION and MFS?", flush=True)
+        # The command line tool, over /json and over the PC client port. The
+        # settings it needs come last in {"ECHO":0}, which takes several seconds.
+        fet = [sys.executable, str(ROOT.parent / "Utilities/fet.py"), "--host", "127.0.0.1",
+               "--http-port", str(runtime.http_port), "--tcp-port", str(runtime.tcp_port)]
+        for extra in ([], ["--arduino"]):
+            result = subprocess.run(fet + extra + ["get", "Z_OFFSET", "OTA BUILD", "LOCKED"], capture_output=True,
+                                    text=True, timeout=60)
+            assert result.returncode == 0 and "Z_OFFSET = 13" in result.stdout and "LOCKED = No" in result.stdout, result
+        result = subprocess.run(fet + ["set", "SEND_MISS=1"], capture_output=True, text=True, timeout=60)
+        assert result.returncode == 0 and "SEND_MISS: 0 -> 1" in result.stdout, result
+        runtime.firmware_command({"SEND_MISS": 0})
+        print("PASS: fet.py reads the whole ECHO over /json and the PC client port, and changes a setting", flush=True)
         with socket.create_connection(("127.0.0.1", runtime.http_port), timeout=10) as stalled:
             stalled.sendall(b"POST /json HTTP/1.1\r\nHost: localhost\r\nContent-Type: application/json\r\n"
                             b"Content-Length: 32\r\n\r\n{")

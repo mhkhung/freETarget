@@ -916,6 +916,33 @@ void serial_putch(char ch,
 
   /*******************************************************************************
    *
+   * @function: tcpip_queue_room
+   *
+   * @brief:    How many bytes the TCPIP input queue can still take
+   *
+   *******************************************************************************/
+  int tcpip_queue_room(void)
+  {
+    int used;
+
+    if ( queue_lock == NULL )          // Not set up yet (start up)
+    {
+      return 0;
+    }
+
+    xSemaphoreTake(queue_lock, portMAX_DELAY);
+    used = in_buffer.in - in_buffer.out;
+    xSemaphoreGive(queue_lock);
+    if ( used < 0 )
+    {
+      used += sizeof(in_buffer.queue);
+    }
+
+    return (int)sizeof(in_buffer.queue) - 1 - used;
+  }
+
+  /*******************************************************************************
+   *
    * @function: tcpip_socket_2_queue
    *
    * @brief:    Put fresh TCPIP data into the queue for later
