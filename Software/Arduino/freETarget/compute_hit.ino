@@ -419,6 +419,42 @@ static void target_geometry
 
 /*----------------------------------------------------------------
  *
+ * function: distance_error
+ *
+ * brief:    How far a position is from what the sensors heard
+ * 
+ * return:   Sum of the differences in clock ticks
+ *
+ *----------------------------------------------------------------
+ *
+ * Each sensor heard the shot count + estimate ticks (slant range)
+ * after the closest one.  Compare that, on the paper, with the
+ * distance from (x, y) to the sensor.
+ *
+ *--------------------------------------------------------------*/
+static double distance_error
+  (
+  double x,                         // Position to check (clock ticks)
+  double y,
+  double estimate,                  // Slant range to the closest sensor
+  double z_offset_clock             // Time difference between paper and sensor plane
+  )
+{
+  double error, heard;
+  int    i;
+
+  error = 0;
+  for (i=N; i <= W; i++)
+  {
+    heard = sq(sensor_list[i].count + estimate) - sq(z_offset_clock);
+    heard = (heard > 0) ? sqrt(heard) : 0;
+    error += fabs(sqrt(sq(x - sensor_list[i].x_tick) + sq(y - sensor_list[i].y_tick)) - heard);
+  }
+  return error;
+}
+
+/*----------------------------------------------------------------
+ *
  * function: find_xy_3D
  *
  * brief: Calaculate where the shot seems to lie
@@ -474,42 +510,6 @@ static void target_geometry
  *               
  *                 
  *--------------------------------------------------------------*/
-
-/*----------------------------------------------------------------
- *
- * function: distance_error
- *
- * brief:    How far a position is from what the sensors heard
- * 
- * return:   Sum of the differences in clock ticks
- *
- *----------------------------------------------------------------
- *
- * Each sensor heard the shot count + estimate ticks (slant range)
- * after the closest one.  Compare that, on the paper, with the
- * distance from (x, y) to the sensor.
- *
- *--------------------------------------------------------------*/
-static double distance_error
-  (
-  double x,                         // Position to check (clock ticks)
-  double y,
-  double estimate,                  // Slant range to the closest sensor
-  double z_offset_clock             // Time difference between paper and sensor plane
-  )
-{
-  double error, heard;
-  int    i;
-
-  error = 0;
-  for (i=N; i <= W; i++)
-  {
-    heard = sq(sensor_list[i].count + estimate) - sq(z_offset_clock);
-    heard = (heard > 0) ? sqrt(heard) : 0;
-    error += fabs(sqrt(sq(x - sensor_list[i].x_tick) + sq(y - sensor_list[i].y_tick)) - heard);
-  }
-  return error;
-}
 
 bool find_xy_3D
     (

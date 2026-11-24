@@ -294,6 +294,41 @@ unsigned int compute_hit(shot_record_t *shot)      // Storing the results
 
 /*----------------------------------------------------------------
  *
+ * @function: distance_error
+ *
+ * @brief: How far a position is from what the sensors heard
+ *
+ * @return: Sum of the differences in clock counts
+ *
+ *----------------------------------------------------------------
+ *
+ * Each sensor heard the shot count + estimate counts (slant range)
+ * after it happened.  Compare that, on the paper, with the distance
+ * from (x, y) to the sensor.
+ *
+ *--------------------------------------------------------------*/
+static sensor_t *const sensor_list = s;          // find_xy_3D()'s argument hides s[]
+
+static real_t distance_error(real_t x, real_t y, // Position to check (clock counts)
+                             real_t estimate,    // Slant range to the reference sensor
+                             real_t z_offset_clock)
+{
+  real_t error, heard;
+  int    i;
+
+  error = 0;
+  for ( i = N; i <= W; i++ )
+  {
+    heard = SQ(sensor_list[i].count + estimate) - SQ(z_offset_clock);
+    heard = (heard > 0) ? sqrt(heard) : 0;
+    error += fabs(sqrt(SQ(x - sensor_list[i].x) + SQ(y - sensor_list[i].y)) - heard);
+  }
+
+  return error;
+}
+
+/*----------------------------------------------------------------
+ *
  * @function: find_xy_3D
  *
  * @brief: Calaculate where the shot seems to lie
@@ -348,41 +383,6 @@ unsigned int compute_hit(shot_record_t *shot)      // Storing the results
  *
  *
  *--------------------------------------------------------------*/
-
-/*----------------------------------------------------------------
- *
- * @function: distance_error
- *
- * @brief: How far a position is from what the sensors heard
- *
- * @return: Sum of the differences in clock counts
- *
- *----------------------------------------------------------------
- *
- * Each sensor heard the shot count + estimate counts (slant range)
- * after it happened.  Compare that, on the paper, with the distance
- * from (x, y) to the sensor.
- *
- *--------------------------------------------------------------*/
-static sensor_t *const sensor_list = s;          // find_xy_3D()'s argument hides s[]
-
-static real_t distance_error(real_t x, real_t y, // Position to check (clock counts)
-                             real_t estimate,    // Slant range to the reference sensor
-                             real_t z_offset_clock)
-{
-  real_t error, heard;
-  int    i;
-
-  error = 0;
-  for ( i = N; i <= W; i++ )
-  {
-    heard = SQ(sensor_list[i].count + estimate) - SQ(z_offset_clock);
-    heard = (heard > 0) ? sqrt(heard) : 0;
-    error += fabs(sqrt(SQ(x - sensor_list[i].x) + SQ(y - sensor_list[i].y)) - heard);
-  }
-
-  return error;
-}
 
 bool find_xy_3D(sensor_t *s,             // Sensor to be operatated on
                 real_t    estimate,      // Estimated position
