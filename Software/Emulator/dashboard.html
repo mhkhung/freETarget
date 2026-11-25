@@ -36,7 +36,40 @@ const FACES={pistol:{name:'10 m air pistol',event:'Pistol Practice',targetName:'
   rifle:{name:'10 m air rifle',event:'Rifle Practice',targetName:'freETarget.targets.AirRifle',card:80,black:30.5,caliber:4.5,dot:true,
   rings:[45.5,40.5,35.5,30.5,25.5,20.5,15.5,10.5,5.5,0.5]}};
 let face='pistol', view={cx:0,cy:0,extent:90};
-const latest=()=>state?.expected?.filter(s=>s.status==='fired').at(-1);
+let shots={session:null,face:null,firstSeq:0,expectedFloor:0,reports:[],expected:[]};
+const latest=()=>shots.expected.at(-1);
+function sessionShots(state, face, previous) {
+  const events=(state.events||[]).filter(e=>!e.history);
+  const session=events.findLast(e=>e.session!=null)?.session ?? 0;
+  const expected=state.expected||[], same=previous.session===session&&previous.face===face;
+  let firstSeq=same?previous.firstSeq:0, target=null;
+  // New sessions and changes of face are drawing boundaries, including changes
+  // made by the embedded athlete page or another client.
+  for(const e of events){
+    if(e.session!==session)continue;
+    const next=e.target?((e.target|0)&~1):target;
+    if(e.change==='new'||(target!==null&&next!==target))firstSeq=Math.max(firstSeq,e.seq??e.next_seq??0);
+    target=next;
+  }
+  const matchesFace=e=>!e.target||(((e.target|0)&~1)===110?'rifle':'pistol')===face;
+  const reports=events.filter(e=>'shot'in e&&e.session===session&&e.seq>=firstSeq&&matchesFace(e));
+  const reportSeqs=new Set(reports.map(e=>e.seq));
+  const expectedFloor=same?previous.expectedFloor:(expected.at(-1)?.id??0);
+  return {session,face,firstSeq,expectedFloor,reports,expected:expected.filter(s=>s.status==='fired'&&
+    (s.result?reportSeqs.has(s.result.seq):s.id>expectedFloor))};
+}
+function clearShots() {
+  shots={...shots,firstSeq:Math.max(0,...(state?.events||[]).map(e=>e.seq||0))+1,
+    expectedFloor:state?.expected?.at(-1)?.id??0,reports:[],expected:[]};
+  renderShots();draw();
+}
+function renderShots() {
+  $('shots').textContent=shots.reports.length;
+  const s=latest(),a=s?.result;
+  $('error').textContent=s&&a&&!a.miss?Math.hypot(s.x-a.x,s.y-a.y).toFixed(3):'—';
+  if(s){$('arrivals').replaceChildren(...s.arrivals_ns.map((n,i)=>{const tr=document.createElement('tr');for(const value of ['NESW'[i],(n/1000).toFixed(2),n/100]){const td=document.createElement('td');td.textContent=value;tr.append(td)}return tr}))}
+  else{const tr=document.createElement('tr'),td=document.createElement('td');td.colSpan=3;td.textContent='Click the target to begin.';tr.append(td);$('arrivals').replaceChildren(tr)}
+}
 function clickPosition(event, rect, view) {
   return {x: view.cx + ((event.clientX - rect.left) / rect.width - .5) * 2 * view.extent,
           y: view.cy + ((event.clientY - rect.top) / rect.height - .5) * 2 * view.extent};
@@ -73,8 +106,8 @@ for(const d of f.rings){const inBlack=d<=f.black;if(f.dot&&d===f.rings[9]){ctx.f
 ctx.strokeStyle=inBlack?'#d4d4c0':'#52564e';ctx.lineWidth=1.2*px;ctx.beginPath();ctx.arc(0,0,d/2,0,Math.PI*2);ctx.stroke()}
 ctx.setLineDash([6*px,6*px]);ctx.strokeStyle='#42645c';ctx.lineWidth=1.5*px;ctx.beginPath();ctx.arc(0,0,(state?.sensor_diameter_mm||232)/2,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);
 for(const {name,x,y} of state?.sensor_positions||[]){ctx.fillStyle='#8ae0b5';ctx.strokeStyle='#173d31';ctx.lineWidth=2*px;ctx.beginPath();ctx.arc(x,y,7*px,0,Math.PI*2);ctx.fill();ctx.stroke();ctx.save();ctx.translate(x,y);ctx.font=`${18*px}px system-ui`;ctx.textAlign='center';ctx.lineWidth=4*px;ctx.strokeText(name,0,-12*px);ctx.fillText(name,0,-12*px);ctx.restore()}
-for(const s of state?.expected||[]){if(s.status!=='fired')continue;const a=8*px;ctx.strokeStyle='#35a877';ctx.lineWidth=2*px;ctx.beginPath();ctx.moveTo(s.x-a,s.y);ctx.lineTo(s.x+a,s.y);ctx.moveTo(s.x,s.y-a);ctx.lineTo(s.x,s.y+a);ctx.stroke()}
-const reports=(state?.events||[]).filter(e=>'shot'in e && !e.history);for(const s of reports){if(s.miss)continue;const p=firmwarePosition(s);ctx.strokeStyle='#f5a54e';ctx.lineWidth=2*px;ctx.beginPath();ctx.arc(p.x,p.y,f.caliber/2,0,Math.PI*2);ctx.stroke()}
+for(const s of shots.expected){const a=8*px;ctx.strokeStyle='#35a877';ctx.lineWidth=2*px;ctx.beginPath();ctx.moveTo(s.x-a,s.y);ctx.lineTo(s.x+a,s.y);ctx.moveTo(s.x,s.y-a);ctx.lineTo(s.x,s.y+a);ctx.stroke()}
+for(const s of shots.reports){if(s.miss)continue;const p=firmwarePosition(s);ctx.strokeStyle='#f5a54e';ctx.lineWidth=2*px;ctx.beginPath();ctx.arc(p.x,p.y,f.caliber/2,0,Math.PI*2);ctx.stroke()}
 ctx.setTransform(1,0,0,1,0,0);$('zoomText').textContent=`${f.name} · view ±${view.extent<10?view.extent.toFixed(1):Math.round(view.extent)} mm · scroll to zoom`}
 async function post(path,body){const r=await fetch('/api/'+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw Error(data.error);return data}
 async function fire(x,y){if(busy||!state?.ready)return;busy=true;try{const missing=[...document.querySelectorAll('.missing:checked')].map(e=>e.value);const s=await post('shot',{x,y,missing});$('message').textContent=`Shot ${s.id} queued · X ${x.toFixed(1)} mm · Y ${y.toFixed(1)} mm`;}catch(e){$('message').textContent=e.message}finally{busy=false}}
@@ -85,15 +118,13 @@ $('zoomIn').onclick=()=>{view=zoomAt(view,{x:view.cx,y:view.cy},0.5);draw()};
 $('zoomOut').onclick=()=>{view=zoomAt(view,{x:view.cx,y:view.cy},2);draw()};
 $('center').onclick=()=>fire(0,0);$('extent').onchange=()=>{view=presetView($('extent').value,face);draw()};
 $('face').onchange=async()=>{const f=FACES[$('face').value];try{await post('command',{EVENT:f.event,TARGET_NAME:f.targetName});await post('command',{SESSION:0});
-  face=$('face').value;view=presetView('card',face);$('extent').value='card';$('message').textContent=`New ${f.name} practice session.`;draw()}catch(e){$('face').value=face;$('message').textContent=e.message}};
-for(const [id,path,body] of [['session','command',{SESSION:0}],['end','command',{SESSION_END:0}],['reset','reset',{}]])$(id).onclick=async()=>{try{await post(path,body);$('message').textContent=id==='reset'?'Resetting the ESP32…':'Command sent.'}catch(e){$('message').textContent=e.message}};
+  face=$('face').value;view=presetView('card',face);$('extent').value='card';clearShots();$('message').textContent=`New ${f.name} practice session.`}catch(e){$('face').value=face;$('message').textContent=e.message}};
+for(const [id,path,body] of [['session','command',{SESSION:0}],['end','command',{SESSION_END:0}],['reset','reset',{}]])$(id).onclick=async()=>{try{await post(path,body);if(id==='session')clearShots();$('message').textContent=id==='reset'?'Resetting the ESP32…':'Command sent.'}catch(e){$('message').textContent=e.message}};
 $('environment').onclick=async()=>{try{await post('environment',{temperature:+$('temperature').value,humidity:+$('humidity').value});$('message').textContent='Environment updated.'}catch(e){$('message').textContent=e.message}};
 async function poll(){try{const r=await fetch('/api/status');state=await r.json();$('status').textContent=state.ready?'Connected · '+(state.armed?'armed':'rearming'):state.error||'Booting firmware…';$('status').className=state.ready?'up':'';
 if(state.ready&&!linked){const page=firmwarePage(location,state);$('firmware').src=page;$('open').href=page;linked=true}
 const now=firmwareFace(state.events);if(now&&now!==face&&document.activeElement!==$('face')){face=now;$('face').value=now;if($('extent').value==='card')view=presetView('card',face)}
 for(const id of ['session','end','reset','face'])$(id).disabled=!state.ready;$('center').disabled=!state.ready||!state.armed;
-const reports=state.events.filter(e=>'shot'in e&&!e.history);$('shots').textContent=reports.length;$('time').textContent=state.time_s.toFixed(1);
-const s=latest(),a=s?.result;$('error').textContent=s&&a&&!a.miss?Math.hypot(s.x-a.x,s.y-a.y).toFixed(3):'—';$('speed').textContent=state.speed_m_s.toFixed(2)+' m/s';
-if(s){$('arrivals').replaceChildren(...s.arrivals_ns.map((n,i)=>{const tr=document.createElement('tr');for(const value of ['NESW'[i],(n/1000).toFixed(2),n/100]){const td=document.createElement('td');td.textContent=value;tr.append(td)}return tr}))}
+shots=sessionShots(state,face,shots);renderShots();$('time').textContent=state.time_s.toFixed(1);$('speed').textContent=state.speed_m_s.toFixed(2)+' m/s';
 $('logs').textContent=state.logs.join('\n');$('diagnostics').textContent=`Sensor reads: ${state.sensor_reads} · DAC writes: ${state.dac_writes} · Late events: ${state.late_events} (max ${state.max_lateness_ns} ns) · Dropped events: ${state.dropped_events} · Dropped broadcasts: ${state.broadcasts_dropped}`;draw();}catch(e){$('status').textContent='Dashboard connection lost'}setTimeout(poll,500)}draw();poll();
 </script></html>

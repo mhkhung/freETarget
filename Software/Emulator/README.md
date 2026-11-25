@@ -23,6 +23,9 @@ python3 Software/Emulator/emulator.py run
 Open **http://127.0.0.1:18888/**. Boot takes roughly 10–30 seconds depending on
 the host. Wait for “Connected · armed”, then click the target or “Fire centre”.
 The green marks are requested positions; orange circles are firmware results.
+Starting a new session or changing between pistol and rifle clears the shot
+generator's marks, shot count, last error and arrival table. Saved sessions
+remain available in the athlete page's history.
 The panel on the right is the actual athlete page served by the emulated ESP32.
 The athlete page follows the newest 10-shot series and shows decimal and integer
 totals, individual shot scores, and the average hit point as a cyan cross and
